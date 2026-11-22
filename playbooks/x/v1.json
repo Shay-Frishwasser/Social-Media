@@ -1,0 +1,10 @@
+{
+  "platform": "x", "version": 1, "effective_date": "2026-11-22", "review_due": "2027-02-22",
+  "evidence_level": "official_advertiser_guidance_plus_observational", "principles": ["Lead with one focused idea", "Write conversationally", "Use media when it materially adds context", "Use questions and polls only when genuinely answerable"],
+  "formats": {"post": {"hook": "specific claim, observation, or question", "body": "concise evidence or point of view", "cta": "reply, read, or act—one only"}, "thread": {"hook": "standalone promise", "body": "ordered points with a conclusion"}},
+  "length_guidance": {"post": "Concise by default; 50-100 characters is an ad-copy prior, not an organic ranking rule."},
+  "link_policy": "No universal organic penalty encoded. Make the post valuable without requiring the click and measure account-level outcomes.",
+  "cadence_prior": {"range_per_day": [3, 4], "status": "high-frequency starting hypothesis; quality and capacity override"},
+  "pillar_mix_prior": {"insight": 40, "conversation": 25, "curation": 20, "conversion": 15, "status": "heuristic"},
+  "sources": ["https://business.x.com/content/dam/business-twitter/resources/x-downloadable-guides/build-your-presence-on-x-one-sheet.pdf", "https://business.x.com/en/advertising/campaign-types/engagements", "https://buffer.com/resources/social-media-frequency-guide/"]
+}

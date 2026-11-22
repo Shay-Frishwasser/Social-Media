@@ -1,0 +1,71 @@
+[
+  {
+    "id": "he_formal_b2b",
+    "language": "he",
+    "system": "את/ה אסטרטג/ית מותג בכיר/ה. כתוב/כתבי עברית טבעית, מדויקת ולא מתורגמת. אין להמציא עובדות שלא נמסרו.",
+    "prompt": "כתוב פוסט LinkedIn רשמי של 90–120 מילים עבור NovaSec, חברת אבטחת מידע ישראלית. עובדות מותרות בלבד: המוצר מסייע לצוותי IT למפות הרשאות; קהל: מנהלי IT בארגונים בינוניים; הצעה: הדגמה של 20 דקות. טון: בטוח, ענייני, ללא הפחדה. סיים בקריאה לפעולה. אל תוסיף לקוחות, מספרים, פרסים או הבטחות שלא נמסרו."
+  },
+  {
+    "id": "he_conversational_israeli",
+    "language": "he",
+    "system": "את/ה קופירייטר/ית ישראלי/ת. כתוב/כתבי בעברית יומיומית, חמה ולא מאולצת; בלי סלנג מוגזם ובלי עובדות מומצאות.",
+    "prompt": "כתוב קפטן לאינסטגרם (עד 80 מילים) לבית קפה בשם Luma. עובדות: קלייה מקומית, ישיבה שכונתית, פתוח א׳–ו׳. הטון קליל וישראלי. המטרה: להזמין אנשים לעצור לקפה באמצע היום. שלב את שם המותג באנגלית באופן טבעי."
+  },
+  {
+    "id": "he_feminine_singular",
+    "language": "he",
+    "system": "פני לקוראת אחת בלשון נקבה בלבד. בדקי שכל פועל, כינוי וציווי עקביים בנקבה יחידה.",
+    "prompt": "כתבי פוסט קצר למאמנת קריירה. עובדות: פגישת מיקוד בת 45 דקות, מיועדת לנשים ששוקלות שינוי מקצועי. הזמיני את הקוראת לקבוע שיחה. אל תשתמשי בלוכסנים או בניסוחים ניטרליים."
+  },
+  {
+    "id": "he_masculine_singular",
+    "language": "he",
+    "system": "פנה לקורא אחד בלשון זכר בלבד. בדוק שכל פועל, כינוי וציווי עקביים בזכר יחיד.",
+    "prompt": "כתוב פוסט קצר למאמן כושר. עובדות: אימון היכרות אישי של 30 דקות, מתאים למתחילים. הזמן את הקורא להשאיר הודעה. אל תשתמש בלוכסנים או בניסוחים ניטרליים."
+  },
+  {
+    "id": "he_plural_mixed_brand",
+    "language": "he",
+    "system": "פנו לקהל מעורב בלשון רבים עקבית. שמרו שמות מותג ומונחי מוצר באנגלית כפי שנכתבו.",
+    "prompt": "כתבו פוסט ל-X עד 240 תווים עבור FlowDesk AI. עובדות: כלי מקומי לארגון משימות; הנתונים נשמרים במחשב המשתמש. הזמינו את הקוראים לנסות גרסת demo. אל תתרגמו את FlowDesk AI או demo."
+  },
+  {
+    "id": "en_marketing",
+    "language": "en",
+    "system": "You are a precise B2B brand copywriter. Use only supplied facts and avoid hype.",
+    "prompt": "Write a 90–120 word LinkedIn post for NovaSec. Facts: it helps IT teams map permissions; audience: IT managers at mid-sized organizations; offer: a 20-minute demo. Tone: confident, practical, no fear tactics. End with a CTA. Do not invent customers, metrics, awards, or guarantees."
+  },
+  {
+    "id": "strict_grounded_json",
+    "language": "he",
+    "system": "Extract only explicitly stated facts. Missing values must be null. Never infer. Return only JSON matching the requested schema.",
+    "prompt": "מקור: ‘סטודיו נועה נמצא בחיפה ומציע שיעורי יוגה בקבוצות קטנות. באתר לא צוינו שנת הקמה, מספר לקוחות או שעות פתיחה.’ חלץ brand_name, city, services, founded_year, customer_count, opening_hours. For each field include value, origin, quoted_span, confidence. origin must be observed or unknown; unknown fields must have null value and null quoted_span.",
+    "json_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["brand_name", "city", "services", "founded_year", "customer_count", "opening_hours"],
+      "properties": {
+        "brand_name": {"$ref": "#/$defs/claim"},
+        "city": {"$ref": "#/$defs/claim"},
+        "services": {"$ref": "#/$defs/claim"},
+        "founded_year": {"$ref": "#/$defs/claim"},
+        "customer_count": {"$ref": "#/$defs/claim"},
+        "opening_hours": {"$ref": "#/$defs/claim"}
+      },
+      "$defs": {
+        "claim": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value", "origin", "quoted_span", "confidence"],
+          "properties": {
+            "value": {},
+            "origin": {"enum": ["observed", "unknown"]},
+            "quoted_span": {"type": ["string", "null"]},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+          }
+        }
+      }
+    }
+  }
+]
+

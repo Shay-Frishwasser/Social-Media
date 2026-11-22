@@ -1,0 +1,13 @@
+# CUDA torch is installed separately from the official PyTorch CUDA index.
+accelerate>=1.10
+diffusers>=0.37
+huggingface-hub>=0.35
+numpy>=2.0
+onnxruntime>=1.22
+pillow>=11.0
+playwright>=1.55
+psutil>=7.0
+python-dotenv>=1.1
+sentence-transformers>=5.0
+transformers>=4.56
+

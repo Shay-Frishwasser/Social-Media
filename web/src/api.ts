@@ -1,0 +1,3 @@
+export type Brand={id:string;name:string;status:string};
+export type Claim={id:string;field_key:string;value:unknown;origin:'observed'|'inferred';confidence:number;status:string;quoted_span?:string;source?:{title?:string;url?:string};is_user_override:boolean};
+export async function api<T>(path:string,init?:RequestInit):Promise<T>{const response=await fetch('/api'+path,{...init,headers:{...(init?.body instanceof FormData?{}:{'Content-Type':'application/json'}),...init?.headers}});if(!response.ok)throw new Error((await response.json().catch(()=>({detail:response.statusText}))).detail);return response.json()}

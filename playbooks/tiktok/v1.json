@@ -1,0 +1,10 @@
+{
+  "platform": "tiktok", "version": 1, "effective_date": "2026-11-22", "review_due": "2027-02-22",
+  "evidence_level": "official_plus_observational", "principles": ["Earn attention in the first 3-6 seconds", "Use native vertical composition", "Build hook-body-close structure", "Optimize for completion and meaningful interaction"],
+  "formats": {"short_video": {"hook": "show result, tension, or specific promise before context", "body": "fast, coherent progression", "cta": "natural question or next step"}},
+  "length_guidance": {"script": "Match length to idea; remove throat-clearing and protect safe zones.", "caption": "Add searchable context without repeating the script."},
+  "link_policy": "Links are product/account-context dependent; do not assert an algorithmic penalty without current evidence.",
+  "cadence_prior": {"range_per_week": [2, 5], "status": "quality-first starting hypothesis"},
+  "pillar_mix_prior": {"education": 35, "entertainment": 30, "community": 20, "conversion": 15, "status": "heuristic"},
+  "sources": ["https://newsroom.tiktok.com/how-tiktok-recommends-videos-for-you", "https://ads.tiktok.com/business/en/creative-codes", "https://buffer.com/resources/social-media-frequency-guide/"]
+}

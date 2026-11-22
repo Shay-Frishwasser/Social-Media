@@ -1,0 +1,10 @@
+{
+  "platform": "youtube", "version": 1, "effective_date": "2026-11-22", "review_due": "2027-02-22",
+  "evidence_level": "official", "principles": ["Optimize packaging for appeal", "Deliver the title/thumbnail promise immediately", "Sustain engagement and viewer satisfaction", "Treat tags as low priority"],
+  "formats": {"video": {"hook": "confirm the promise in opening seconds", "body": "structured retention with useful progression", "cta": "contextual next video or action"}, "short": {"hook": "immediate curiosity or payoff", "body": "single focused idea"}},
+  "length_guidance": {"video": "No universal optimum; match duration to viewer value and retention.", "description": "Front-load summary and useful links; keep metadata accurate."},
+  "link_policy": "Links are allowed in descriptions subject to YouTube policy; avoid misleading or unsafe destinations.",
+  "cadence_prior": {"long_form_per_week": [1, 1], "shorts_per_week": [1, 3], "status": "sustainable starting hypothesis"},
+  "pillar_mix_prior": {"education": 45, "authority": 25, "story": 20, "conversion": 10, "status": "heuristic"},
+  "sources": ["https://support.google.com/youtube/answer/16559650", "https://support.google.com/youtube/answer/16533387"]
+}

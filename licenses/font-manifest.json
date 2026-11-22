@@ -1,0 +1,13 @@
+{
+  "source": "https://github.com/google/fonts/tree/main/ofl",
+  "license": "SIL Open Font License 1.1",
+  "runtime_root": "C:\\brandai-runtime\\fonts",
+  "fonts": [
+    {"family": "Assistant", "file": "assistant/Assistant.ttf", "sha256": "1c3b393884f8fb133a1b17f41d26178adae1050a4f86d7a429d1b5658c314fa3"},
+    {"family": "Heebo", "file": "heebo/Heebo.ttf", "sha256": "18f930b583fa8fe6b40b2f8263b7ac6afbac07adc91a12467874e7467d3ace30"},
+    {"family": "Inter", "file": "inter/Inter.ttf", "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031"},
+    {"family": "Noto Sans Hebrew", "file": "notosanshebrew/NotoSansHebrew.ttf", "sha256": "7ef36a2c3593758cdb622e1bdef4f84523e92fbc3ccc667438dd80ff54c2de88"},
+    {"family": "Rubik", "file": "rubik/Rubik.ttf", "sha256": "1b3a7437ba2af80e465e773ed60c5036d1ba6ace492d89046dbcf18fb31e4e88"}
+  ],
+  "note": "Each runtime family directory also contains its upstream OFL.txt."
+}

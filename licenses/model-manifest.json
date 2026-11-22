@@ -1,0 +1,63 @@
+{
+  "verified_at": "2026-11-22",
+  "policy": "Model weights must be Apache-2.0 or MIT. Model revisions are pinned before download.",
+  "selected": [
+    {
+      "role": "general_llm",
+      "repo": "Qwen/Qwen3.5-9B",
+      "revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+      "license": "Apache-2.0",
+      "artifact_repo": "bartowski/Qwen_Qwen3.5-9B-GGUF",
+      "artifact_revision": "182be2fd6c7bc44887d88a91cb03ff009cc9f549",
+      "artifact": "Qwen_Qwen3.5-9B-Q8_0.gguf",
+      "bytes": 9804541984
+    },
+    {
+      "role": "embedding_candidate",
+      "repo": "BAAI/bge-m3",
+      "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+      "license": "MIT"
+    },
+    {
+      "role": "embedding_candidate",
+      "repo": "intfloat/multilingual-e5-base",
+      "revision": "d128750597153bb5987e10b1c3493a34e5a4502a",
+      "license": "MIT"
+    },
+    {
+      "role": "image",
+      "repo": "black-forest-labs/FLUX.2-klein-4B",
+      "revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+      "license": "Apache-2.0",
+      "components": {
+        "transformer": "Flux2Transformer2DModel",
+        "text_encoder": "Qwen3ForCausalLM",
+        "vae": "AutoencoderKLFlux2"
+      }
+    }
+  ],
+  "excluded": [
+    {
+      "family": "Google Gemma 4",
+      "reason": "Gemma Terms of Use are not an OSI Apache-2.0/MIT license."
+    },
+    {
+      "family": "DictaLM-3.0-Nemotron-12B",
+      "reason": "NVIDIA Open Model Agreement is not the required Apache-2.0/MIT license."
+    },
+    {
+      "family": "DictaLM-3.0-24B-Thinking",
+      "reason": "Apache-2.0 license passed, but the real hardware/quality gate failed due to latency, reasoning-token exhaustion, truncation, and hallucinated claims."
+    }
+  ],
+  "pending_legal_review": [
+    {
+      "role": "foreground_segmentation",
+      "repo": "ZhengPeng7/BiRefNet",
+      "declared_license": "MIT",
+      "status": "adapter implemented; checkpoint disabled",
+      "reason": "The maintainer declares code and weights MIT, but 2026 upstream issues acknowledge restrictive training-dataset terms and no fully commercial-cleared training configuration. Requires explicit business/legal acceptance before download or inference."
+    }
+  ]
+}
+

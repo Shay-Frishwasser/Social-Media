@@ -1,0 +1,10 @@
+{
+  "platform": "facebook", "version": 1, "effective_date": "2026-11-22", "review_due": "2027-02-22",
+  "evidence_level": "official_plus_observational", "principles": ["Reward original content", "Avoid duplicate or lightly transformed posts", "Avoid irrelevant long captions and hashtag stuffing", "Create content that sustains real discussion"],
+  "formats": {"feed_post": {"hook": "clear relevance in first lines", "body": "story, useful detail, or community prompt", "cta": "specific and non-baiting"}},
+  "length_guidance": {"post": "Depth may be long when useful; remove unrelated filler."},
+  "link_policy": "No blanket penalty encoded. Use links when they serve the user and measure results manually.",
+  "cadence_prior": {"range_per_day": [1, 2], "status": "upper-volume starting hypothesis; reduce if quality suffers"},
+  "pillar_mix_prior": {"community": 35, "education": 30, "story": 20, "conversion": 15, "status": "heuristic"},
+  "sources": ["https://about.fb.com/news/2026/03/rewarding-original-creators-on-facebook/", "https://about.fb.com/news/2025/04/cracking-down-spammy-content-facebook/", "https://buffer.com/resources/social-media-frequency-guide/"]
+}

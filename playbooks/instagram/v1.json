@@ -1,0 +1,10 @@
+{
+  "platform": "instagram", "version": 1, "effective_date": "2026-11-22", "review_due": "2027-02-22",
+  "evidence_level": "mixed_official_and_observational", "principles": ["Prioritize original content", "Optimize Reels for watch time and sends", "Use carousels for saveable depth", "Design the opening frame as the hook"],
+  "formats": {"reel": {"hook": "visual/text promise immediately", "cta": "one relevant action"}, "carousel": {"hook": "specific value on slide 1", "body": "one idea per slide", "cta": "save/share when genuinely useful"}},
+  "length_guidance": {"caption": "Use the shortest length that fully delivers the value; front-load the promise.", "hashtags": "Few highly relevant tags; never keyword stuffing."},
+  "link_policy": "Do not claim a universal reach penalty. Prefer profile link, story link, or explicit navigation where clickable links are unavailable.",
+  "cadence_prior": {"range_per_week": [3, 5], "status": "starting hypothesis; personalize from manual feedback"},
+  "pillar_mix_prior": {"education": 40, "authority": 25, "community": 20, "conversion": 15, "status": "heuristic, not platform law"},
+  "sources": ["https://about.fb.com/news/2026/01/2026-ai-drives-performance/", "https://buffer.com/resources/instagram-algorithms/", "https://buffer.com/resources/social-media-frequency-guide/"]
+}

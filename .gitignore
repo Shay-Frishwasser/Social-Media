@@ -1,0 +1,21 @@
+.env
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+node_modules/
+benchmark-results/
+web/dist/
+*.tsbuildinfo
+.coverage
+htmlcov/
+runtime/
+brandai-runtime/
+
+# Heavy/local state must never enter OneDrive or Git.
+.venv/
+models/
+generated/
+*.db
+*.sqlite*
+

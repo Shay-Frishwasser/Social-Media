@@ -1,0 +1,10 @@
+{
+  "platform": "linkedin", "version": 1, "effective_date": "2026-11-22", "review_due": "2027-02-22",
+  "evidence_level": "official", "principles": ["Publish authentic professional insight", "Avoid generic recycled posts and engagement bait", "Use firsthand expertise and concrete examples", "Format for scanning without artificial one-line spam"],
+  "formats": {"educational_post": {"hook": "specific professional tension or outcome", "body": "claim, evidence, framework, implication", "cta": "invite relevant experience"}, "deep_dive": {"target_words": [200, 500], "note": "range is guidance, not a ranking rule"}},
+  "length_guidance": {"post": "Use enough detail to teach; 200-300 words is a useful educational baseline, not a hard optimum."},
+  "link_policy": "No universal external-link penalty is encoded. Test placement by account and objective; never obscure the destination.",
+  "cadence_prior": {"range_per_week": [2, 5], "status": "starting hypothesis"},
+  "pillar_mix_prior": {"industry": 50, "company": 30, "people_culture": 20, "basis": "LinkedIn 3-2-1 concept normalized"},
+  "sources": ["https://news.linkedin.com/2026/ImprovingTheFeed", "https://www.linkedin.com/business/marketing/blog/ai-search/how-to-maximize-ai-visibility-for-your-linkedin-posts", "https://business.linkedin.com/marketing-solutions/strategy-guides/linkedin-pages-smb-playbook"]
+}
