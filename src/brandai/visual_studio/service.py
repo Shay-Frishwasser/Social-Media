@@ -22,6 +22,7 @@ from brandai.db.brand_models import Asset, BrandDesignSystem, ContentItem, Conte
 from brandai.errors import BrandIsolationError, GenerationBlockedError, NotFoundError
 from brandai.onboarding.safe_svg import static_svg
 from brandai.onboarding.visual import contrast_ratio, normalize_hex
+from brandai.publishing.gate import PublishingGate
 from brandai.repositories import VersionRepository
 from brandai.store import BrandAIStore
 from brandai.strategy.models import Platform
@@ -233,9 +234,12 @@ class VisualService:
 
     def render(
         self, brand_id: str, payload: VisualRender | RenderOptions, previous_id: str | None = None,
+        *, operation_id: str | None = None,
     ) -> VisualResponse:
         root = self._assets_root(brand_id)
         with self.store.brand_session(brand_id) as session:
+            if operation_id and (completed := self._from_operation(session, operation_id)):
+                return self._view(completed)
             previous = self._get(session, previous_id) if previous_id else None
             if previous:
                 payload = VisualRender.model_validate({
@@ -275,8 +279,10 @@ class VisualService:
                     providers["background"] = getattr(provider, "model_name", type(provider).__name__)
                 if prepared.mode == "on_demand_hero_cutout_scene":
                     providers["segmentation"] = self.pipeline.segmentation.model_name
-                output.rename(destination)
                 with self.store.brand_session(brand_id, immediate=True) as session:
+                    if operation_id and (completed := self._from_operation(session, operation_id)):
+                        return self._view(completed)
+                    output.rename(destination)
                     row = VisualAsset(
                         id=identifier, previous_id=prepared.previous_id, content_revision_id=prepared.revision_id,
                         on_demand_brief_id=prepared.brief_id, design_system_id=prepared.design_id,
@@ -285,7 +291,8 @@ class VisualService:
                         request_json={**payload.model_dump(mode="json"), "aspect": prepared.aspect, "seed": prepared.seed,
                                       "carousel": len(prepared.slides) > 1},
                         output_json={"aspect": prepared.aspect, "files": [f.model_dump(mode="json") for f in files],
-                                     "layout": checks.model_dump(mode="json"), "providers": providers},
+                                     "layout": checks.model_dump(mode="json"), "providers": providers,
+                                     "operation_id": operation_id},
                     )
                     session.add(row)
                     session.flush()
@@ -295,6 +302,10 @@ class VisualService:
             if destination.is_dir():
                 rmtree(destination)
             raise
+
+    @staticmethod
+    def _from_operation(session: Session, operation_id: str) -> VisualAsset | None:
+        return session.scalar(select(VisualAsset).where(VisualAsset.output_json["operation_id"].as_string() == operation_id))
 
     @staticmethod
     def _manifest(output: Path, pages: int) -> list[RenderedFile]:
@@ -307,14 +318,26 @@ class VisualService:
             files.append(_artifact(output / "carousel-png.zip", "zip"))
         return files
 
-    def download(self, brand_id: str, asset_id: str, format_name: str, page: int) -> tuple[Path, RenderedFile]:
+    def download(self, brand_id: str, asset_id: str, format_name: str, page: int) -> tuple[bytes, RenderedFile]:
         result = self.get(brand_id, asset_id)
+        if result.content_revision_id:
+            with self.store.brand_session(brand_id) as session:
+                revision = session.get(ContentRevision, str(result.content_revision_id))
+                approved = PublishingGate(self.store).require(session, brand_id, revision.content_id, asset_id)
+                for verified in approved.files:
+                    manifest = verified.manifest
+                    if manifest.format == format_name and (format_name != "png" or manifest.page == page):
+                        return verified.data, manifest
+                raise NotFoundError("visual export not found")
         file = next((item for item in result.files if item.format == format_name
                      and (format_name != "png" or item.page == page)), None)
         if file is None:
             raise NotFoundError("visual export not found")
         directory = self._assets_root(brand_id) / "visuals" / str(result.id)
         path = directory / file.name
-        if path.resolve() != path or not path.is_file() or path.stat().st_size != file.bytes or _sha(path) != file.sha256:
+        if path.resolve() != path or not path.is_file() or path.stat().st_size != file.bytes:
             raise GenerationBlockedError("visual export is missing or no longer matches its recorded digest")
-        return path, file
+        data = path.read_bytes()
+        if len(data) != file.bytes or sha256(data).hexdigest() != file.sha256:
+            raise GenerationBlockedError("visual export is missing or no longer matches its recorded digest")
+        return data, file

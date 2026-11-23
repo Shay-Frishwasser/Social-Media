@@ -326,3 +326,69 @@ class VisualAsset(BrandBase):
     request_json: Mapped[dict] = mapped_column(json_type(), nullable=False)
     output_json: Mapped[dict] = mapped_column(json_type(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SocialConnection(BrandBase):
+    __tablename__ = "social_connections"
+    __table_args__ = (UniqueConstraint("provider", "platform", "account_id"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    provider: Mapped[str] = mapped_column(String(20))
+    platform: Mapped[str] = mapped_column(String(20))
+    account_id: Mapped[str] = mapped_column(String(160))
+    label: Mapped[str] = mapped_column(String(120))
+    ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    oauth_state_hash: Mapped[str | None] = mapped_column(String(64))
+    oauth_state_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PublishRecord(BrandBase):
+    __tablename__ = "publish_records"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key"),
+        UniqueConstraint("dedup_key"),
+        CheckConstraint(
+            "status IN ('QUEUED','DISPATCHING','DELIVERED','BLOCKED','FAILED','NEEDS_RECONCILIATION')",
+            name="publish_status",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    content_id: Mapped[str] = mapped_column(ForeignKey("content_items.id"), index=True)
+    revision_id: Mapped[str] = mapped_column(ForeignKey("content_revisions.id"))
+    visual_id: Mapped[str] = mapped_column(ForeignKey("visual_assets.id"))
+    connection_id: Mapped[str | None] = mapped_column(ForeignKey("social_connections.id"))
+    channel: Mapped[str] = mapped_column(String(20))
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    dedup_key: Mapped[str] = mapped_column(String(64))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    recipient: Mapped[str | None] = mapped_column(String(254))
+    status: Mapped[str] = mapped_column(String(30), default="QUEUED")
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    detail: Mapped[dict] = mapped_column(json_type(), default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class BackgroundJob(BrandBase):
+    __tablename__ = "background_jobs"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key"),
+        Index("ix_background_jobs_ready", "status", "available_at"),
+        CheckConstraint("status IN ('QUEUED','RUNNING','RETRY_WAIT','SUCCEEDED','DEAD_LETTER')", name="job_status"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    kind: Mapped[str] = mapped_column(String(36))
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    payload: Mapped[dict] = mapped_column(json_type(), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="QUEUED")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_token: Mapped[str | None] = mapped_column(String(36))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result: Mapped[dict | None] = mapped_column(json_type())
+    error_code: Mapped[str | None] = mapped_column(String(60))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

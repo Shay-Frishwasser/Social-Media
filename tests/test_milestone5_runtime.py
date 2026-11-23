@@ -42,6 +42,8 @@ def test_existing_brand_is_migrated_on_first_access(store):
     engine = store.brand_engine(brand.id)
     try:
         with engine.begin() as connection:
+            for table in ("background_jobs", "publish_records", "social_connections"):
+                connection.exec_driver_sql(f"DROP TABLE {table}")
             connection.execute(text("DROP TABLE visual_assets"))
             connection.execute(text("DROP TABLE external_evidence"))
             connection.execute(text("DROP TABLE topic_research"))

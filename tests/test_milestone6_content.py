@@ -14,13 +14,13 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from brandai import RuntimeSettings
-from brandai.adapters.publishing import DeliveryReceipt
 from brandai.adapters.workers import WorkerLease
 from brandai.api import create_app
 from brandai.content.diversity import DiversityScorer, DiversitySettings, HashEmbeddingProvider, PriorCopy
 from brandai.content.generator import MockDeterministicContentProvider, QwenContentProvider
 from brandai.content.models import DraftCopy, Violation
 from brandai.errors import InvalidStateTransitionError
+from brandai.publishing.models import PublishingBlocked
 from brandai.repositories import AssetRepository
 from test_milestone5_planning import WEEK, approve_inputs, approve_plan, create_plan, create_strategy, seed_evidence
 
@@ -129,11 +129,9 @@ def test_grounded_slot_lifecycle_filters_and_immutable_revisions(content_api):
             service.record_scheduled(brand, item["id"], recovered["revision"]["id"], when)
         final_id = recovered["revision"]["id"]
         assert client.post(f"{entry}/approve", json={"revision_id": final_id}).status_code == 200
-        assert service.record_scheduled(brand, item["id"], final_id, when).status == "SCHEDULED"
-        assert client.patch(entry, json={"revision_id": final_id, "hashtags": []}).status_code == 409
-        receipt = DeliveryReceipt("stub", "external-123", "PUBLISHED")
-        assert service.record_published(brand, item["id"], final_id, receipt).status == "PUBLISHED"
-        assert client.get(f"{base}/content/?status=PUBLISHED").json()[0]["id"] == item["id"]
+        with pytest.raises(PublishingBlocked) as blocked:
+            service.record_scheduled(brand, item["id"], final_id, when)
+        assert blocked.value.report.issues[0].code == "visual_required"
 
         other = client.post("/api/brands", json={"name": "Isolated Brand"}).json()["id"]
         assert client.get(f"/api/brands/{other}/content/{item['id']}").status_code == 404

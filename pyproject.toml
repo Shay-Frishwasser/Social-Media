@@ -10,6 +10,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
   "alembic>=1.17,<2",
   "beautifulsoup4>=4.13,<5",
+  "cryptography>=44,<51",
   "ddgs>=9,<10",
   "fastapi>=0.121,<1",
   "httpx>=0.28,<1",
@@ -28,7 +29,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+aws = ["boto3>=1.40,<2"]
 dev = ["httpx2>=2.16,<3", "pypdf>=6,<8", "pytest>=9,<10"]
+
+[project.scripts]
+brandai-jobs = "brandai.jobs.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

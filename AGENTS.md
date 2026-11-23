@@ -37,6 +37,8 @@ This file is binding context for Codex and other coding agents working in this r
 - User uploads are limited to safe image types, 25 MiB, validated dimensions, and sanitized SVG without active/external content.
 - On-demand photo briefs are transient campaign records. They must not modify the permanent brand profile or approved design system.
 - Social publishing uses the `SocialPublisher` adapter. Do not put Meta/LinkedIn OAuth code into domain services.
+- Apply the publishing gate before content-linked final asset delivery, ZIP export, email, scheduling and social dispatch. Recheck the exact approved revision, the active profile and design, current grounding and every asset digest on download and at job execution. Keep ambiguous outbound effects in reconciliation state.
+- Keep OAuth tokens encrypted at rest with a controller-owned key. Expose connection metadata and redacted errors to callers. Never store provider tokens in queue payloads.
 - Keep local API bindings on loopback by default. Secure-tunnel/server exposure is a separate deployment milestone.
 
 ## Development commands (Windows PowerShell)
@@ -51,8 +53,8 @@ cd web; npm install; npm run build
 
 Run Alembic through `BrandAIStore`; global and per-brand migration histories are independent. Tests must use `tmp_path` runtime roots and must not leave production brand rows.
 
-On macOS, use Python 3.12 and keep the virtual environment, approved OFL fonts and Playwright cache under the runtime root. Use `BRANDAI_CONTENT_PROVIDER=mock` and `BRANDAI_TOPIC_RESEARCH=offline` for deterministic verification. Tests inject search, LLM, embeddings, gradient backgrounds and alpha masks as needed. Set `PLAYWRIGHT_BROWSERS_PATH` to a local Chromium cache to exercise real Pillow composition, browser PNG/PDF rendering and the loopback crawler smoke test.
+On macOS, use Python 3.12 and keep the virtual environment, approved OFL fonts and Playwright cache under the runtime root. Use `BRANDAI_CONTENT_PROVIDER=mock` and `BRANDAI_TOPIC_RESEARCH=offline` for deterministic verification. Tests inject search, LLM, embeddings, image providers, delivery adapters and EC2 clients. Set `PLAYWRIGHT_BROWSERS_PATH` to a local Chromium cache to exercise real Pillow composition, browser PNG/PDF rendering and the loopback crawler smoke test.
 
 ## Current milestone state
 
-Milestones 0–7 are implemented. Strategy and cadence remain brand-local, with human approval, Asia/Jerusalem scheduling and exact playbook provenance. Content requires an approved strategy plus an approved cadence slot or a saved on-demand brief. Exact brand evidence and optionally attributed external quotations pass validation before human review. Visual previews record their design and source revisions, render decisions and file hashes. Read `docs/PROJECT_STATE.md` for schemas, routes and runtime setup. Do not start Milestone 8 without explicit approval.
+Milestones 0–8 are implemented. Brand-local jobs use leased execution, safe retry and dead-letter states. Publishing requires the exact current approved content and render at export, schedule and execution time. AWS mode uses a dedicated queue process for privately leased GPU jobs. Read `docs/PROJECT_STATE.md` and `deploy/aws/DEPLOYMENT.md` for schemas, routes and runtime setup. Keep subsequent milestone work subject to explicit approval.

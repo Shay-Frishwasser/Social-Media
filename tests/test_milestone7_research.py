@@ -205,7 +205,8 @@ def test_migration_keeps_pre_research_content_revision(tmp_path):
     engine = app.state.store.brand_engine(brand)
     try:
         with engine.begin() as connection:
-            for table in ("visual_assets", "external_evidence", "topic_research"):
+            for table in ("background_jobs", "publish_records", "social_connections",
+                          "visual_assets", "external_evidence", "topic_research"):
                 connection.exec_driver_sql(f"DROP TABLE {table}")
             connection.exec_driver_sql("ALTER TABLE content_revisions DROP COLUMN research_json")
             connection.execute(text("UPDATE alembic_version SET version_num = '0005_content_pipeline'"))

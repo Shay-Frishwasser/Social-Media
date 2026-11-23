@@ -6,12 +6,20 @@ from typing import Protocol
 
 
 @dataclass(frozen=True, slots=True)
+class DeliveryMedia:
+    filename: str
+    media_type: str
+    data: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class PublishRequest:
     brand_id: str
     platform: str
     caption: str
     media_paths: tuple[Path, ...]
     idempotency_key: str
+    media: tuple[DeliveryMedia, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +30,7 @@ class DeliveryReceipt:
 
 
 class SocialPublisher(Protocol):
-    """Future OAuth publishers implement this without entering domain logic."""
+    """Official OAuth publishers implement this without entering domain logic."""
     name: str
     async def publish(self, request: PublishRequest) -> DeliveryReceipt: ...
 

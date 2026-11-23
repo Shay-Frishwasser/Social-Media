@@ -21,7 +21,8 @@ class LlamaCppProvider:
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "response_format": {"type": "json_schema", "json_schema": {"name": "brand_extraction", "strict": True, "schema": schema}},
         }
-        response = httpx.post(f"{self.base_url}/v1/chat/completions", json=payload, timeout=self.timeout)
+        with httpx.Client(timeout=self.timeout, trust_env=False) as client:
+            response = client.post(f"{self.base_url}/v1/chat/completions", json=payload)
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         if not content.strip(): raise ValueError("local LLM returned empty structured content")

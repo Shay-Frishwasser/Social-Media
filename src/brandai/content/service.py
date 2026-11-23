@@ -6,13 +6,14 @@ from subprocess import SubprocessError
 
 import httpx
 from pydantic import ValidationError
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from brandai.adapters.publishing import DeliveryReceipt
 from brandai.db.base import utcnow
-from brandai.db.brand_models import ContentItem, ContentRevision
+from brandai.db.brand_models import ContentItem, ContentRevision, PublishRecord
 from brandai.errors import GenerationBlockedError, InvalidStateTransitionError
 from brandai.onboarding.embeddings import EmbeddingProvider
+from brandai.publishing.gate import PublishingGate
 from brandai.research.models import TopicRequest
 from brandai.research.service import TopicResearchService
 from brandai.store import BrandAIStore
@@ -206,6 +207,10 @@ class ContentService:
     def _editable_head(self, repo: ContentRepository, row: ContentItem, expected: str) -> ContentRevision:
         if row.status in {"SCHEDULED", "PUBLISHED"}:
             raise InvalidStateTransitionError("scheduled or published content cannot be edited")
+        if repo.session.scalar(select(PublishRecord.id).where(
+            PublishRecord.content_id == row.id, PublishRecord.status.in_(("DISPATCHING", "NEEDS_RECONCILIATION")),
+        ).limit(1)):
+            raise InvalidStateTransitionError("content delivery must be settled before editing")
         latest = repo.latest(row)
         self._check_head(latest, expected)
         return latest
@@ -231,8 +236,8 @@ class ContentService:
         with self.store.brand_session(brand_id, immediate=True) as session:
             repo = ContentRepository(session, brand_id)
             row = repo.get(content_id)
-            revision = self._require_approved(repo, row, revision_id, allowed=("APPROVED",))
-            self._revalidate_saved_copy(repo, row, revision, check_diversity=False)
+            self._require_approved(repo, row, revision_id, allowed=("APPROVED",))
+            PublishingGate(self.store).require(session, brand_id, content_id)
             row.status, row.scheduled_at = "SCHEDULED", when.astimezone(UTC)
             return repo.response(row)
 
@@ -245,6 +250,7 @@ class ContentService:
             repo = ContentRepository(session, brand_id)
             row = repo.get(content_id)
             self._require_approved(repo, row, revision_id, allowed=("APPROVED", "SCHEDULED"))
+            PublishingGate(self.store).require(session, brand_id, content_id)
             row.status, row.published_at = "PUBLISHED", utcnow()
             row.delivery_receipt = {"provider": receipt.provider, "external_id": receipt.external_id, "status": receipt.status}
             return repo.response(row)

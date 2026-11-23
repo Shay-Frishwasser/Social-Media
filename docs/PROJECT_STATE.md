@@ -7,7 +7,7 @@ BrandAI is a local-AI, web-based Social Media and Brand Manager supporting Insta
 The React UI and FastAPI API are stateless application layers over:
 
 - `<runtime-root>/system.db` holds users, the brand registry, jobs, global reminders, and versioned platform playbooks.
-- `<runtime-root>/brands/<uuid>/brand.db` holds sources, claims, brand versions, strategies, cadence, content revisions, topic quotes, visual provenance, feedback, and photo briefs.
+- `<runtime-root>/brands/<uuid>/brand.db` holds sources, claims, brand versions, strategies, cadence, content revisions, topic quotes, visual provenance, delivery and job records, feedback, and photo briefs.
 - `<runtime-root>/brands/<uuid>/assets` holds brand-contained uploads and media. Rendered files live under `visuals/<visual-id>`.
 
 `BRANDAI_RUNTIME_ROOT` defaults to `C:\brandai-runtime` on Windows and `~/brandai-runtime` on macOS. Keep databases, virtual environments, browser caches, model weights, and generated media outside the checkout. Git carries source, migrations and playbook templates between machines. Each checkout uses its own local runtime root.
@@ -138,9 +138,35 @@ Paths below are relative to `/api/brands/{brand_id}`.
 
 The default visual providers use a seeded Pillow gradient and an ellipse mask. Production callers can inject `VisualPipeline(FluxBackgroundProvider(worker, runner), SAM2Provider(settings, worker, runner))` with separate runners for the two capabilities. They lease `image_generation` and `foreground_segmentation` through the existing worker boundary. Windows and a future AWS `g7.2xlarge` worker can use the same contracts with provisioned runners and pinned model revisions. The macOS suite exercises both stubs and real CPU/Chromium composition. GPU inference, provisioning, and live external search are outside that verification.
 
+### Milestone 8 — publishing, delivery jobs and EC2 controller
+
+- Brand migration `0007_publishing_and_jobs` adds `publish_records`, `social_connections` and `background_jobs`. Queue payloads and delivery receipts remain in the brand DB. The older unscoped job read endpoint still resolves previously registered onboarding jobs.
+- The hard gate requires the latest approved profile and design versions, explicit approval of the current content revision, fresh deterministic copy validation, a matching render, and successful contrast, safe-zone, dimensions and SHA-256 checks for every recorded export. It runs before scheduling, export generation, export download, and immediately before outbound dispatch. Content-linked PNG/PDF/ZIP downloads use the same gate. Structured issues identify which approval or asset needs attention.
+- ZIP packages carry the approved caption and structured copy, individual PNGs, the PDF where applicable, citations and provenance, and a recommended Asia/Jerusalem publication window. When there is an upcoming cadence reservation it anchors the recommendation. Otherwise the fallback is the next day at 10:00 local time. Email attaches the package and supports TLS SMTP through an injected or configured adapter.
+- Official social adapters use Meta for Instagram containers and Facebook Page photos or posts, and LinkedIn for image or PDF document posts. Token values are stored as Fernet-encrypted, brand-and-connection-bound ciphertext. OAuth state is one-use and expires after ten minutes. Credential APIs return metadata and redact validation inputs. Use the approved grant type for each account and configure token refresh through the provider hook or LinkedIn client credentials.
+- Jobs are atomically claimed with renewable leases, idempotency keys, exponential backoff, provider retry timing, progress and dead-letter status. Scheduling stores the selected Asia/Jerusalem instant in UTC. At execution the worker repeats preflight. A destination has one social dispatch per content item. A provider response that might have accepted a post or email moves the record to `NEEDS_RECONCILIATION`, and the queue will not retry that final effect automatically.
+- The dedicated `brandai-jobs` process drains onboarding, content generation, visual render and delivery jobs. Run `python -m brandai.jobs.cli --once` to tick each active brand or `brandai-jobs --poll-seconds 3` as a supervised worker. The AWS configuration keeps the API role queue-only for GPU workloads. The worker starts a private On-Demand instance on a GPU lease, serializes active work, drains idle instances, and enforces startup and batch deadlines. The image has an independent boot watchdog. The deployment guide documents artifact pins, private networking, IAM and storage. [AWS deployment guide](../deploy/aws/DEPLOYMENT.md)
+
+#### Backend routes
+
+Paths are relative to `/api/brands/{brand_id}`.
+
+| Method and path | Purpose |
+|---|---|
+| `GET /publishing/gate/{content_id}` | Inspect structured preflight and optionally pin `visual_asset_id` |
+| `POST /publishing/export/{content_id}` and `GET /publishing/export/{content_id}` | Build a ZIP and download it after revalidation |
+| `POST /publishing/dispatch/{content_id}` | Enqueue email, Meta or LinkedIn delivery now or at an explicit local timestamp |
+| `GET /publishing/records/{record_id}` | Inspect delivery state, schedule, receipt or blocked reasons |
+| `GET /publishing/connections` and `POST /publishing/connections` | List and manage redacted connection records |
+| `POST /publishing/connections/{connection_id}/oauth-state` and `POST /publishing/connections/{connection_id}/complete` | Issue a one-use state and accept credentials from an approved OAuth integration |
+| `POST /jobs`, `GET /jobs` and `GET /jobs/{job_id}` | Enqueue work, list jobs and poll progress |
+| `POST /jobs/run-next` | Execute a due job in local development |
+
+Use `kind=onboarding_research` with `website_url` and `company_name`, `kind=content_generation` with a `slot_id` or `brief_id`, or `kind=visual_render` with a content item, brief, or `previous_id` for a re-render. The payload carries the same generation or render options as the synchronous routes. Use a stable `idempotency_key` for each job or delivery. Scheduled social delivery uses the local Jerusalem offset on the supplied calendar date.
+
 ## macOS backend verification
 
-Use Python 3.12 and a local runtime. The tests run against disposable brand stores with deterministic LLM, search, embedding and GPU worker doubles. To include the visual and loopback browser tests, install Chromium in a runtime cache and leave `PLAYWRIGHT_BROWSERS_PATH` set while running pytest. For reproducible typography, install the pinned OFL files and licenses from `licenses/font-manifest.json` and set `BRANDAI_FONT_DIR` to that font directory.
+Use Python 3.12 and a local runtime. The tests run against disposable brand stores with deterministic LLM, search, embedding, SMTP, social and EC2 worker doubles. To include the visual, publishing bundle and loopback browser tests, install Chromium in a runtime cache and leave `PLAYWRIGHT_BROWSERS_PATH` set while running pytest. For reproducible typography, install the pinned OFL files and licenses from `licenses/font-manifest.json` and set `BRANDAI_FONT_DIR` to that font directory.
 
 ```sh
 export BRANDAI_RUNTIME_ROOT="$HOME/brandai-runtime"
@@ -195,4 +221,4 @@ Open `http://127.0.0.1:8000`. Keep the service on loopback until the secure-tunn
 
 `GPUWorkerProvider.lease(capability)` returns a worker lease. The current implementation starts/stops native llama.cpp locally. A future EC2 provider can wake an AMI, wait for health, lease the endpoint, then terminate it without changing extraction/domain services. AWS currently lists `g7.2xlarge` as one RTX PRO 4500 Blackwell GPU with 32 GB VRAM; `g7e.2xlarge` is a different 96 GB RTX PRO 6000 option.
 
-Future Meta Graph and LinkedIn OAuth implementations must implement `SocialPublisher`. Email and download implement `PackageDelivery`. Credentials belong in deployment secret storage, never SQLite playbooks or repository files.
+Meta Graph and LinkedIn delivery implement `SocialPublisher`. Email uses a separate delivery adapter. Keep encryption keys and application credentials in deployment secret storage. Encrypted connection credentials stay in brand-local SQLite records.

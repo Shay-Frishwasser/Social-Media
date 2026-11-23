@@ -159,6 +159,10 @@ def test_flux_carousel_exports_revision_provenance_and_secure_download(visual_ap
     assert client.get(f"{base}/visual-assets/{asset['id']}").json() == asset
 
     download = f"{base}/visual-assets/{asset['id']}/download"
+    assert client.get(download).status_code == 409
+    assert client.post(f"{base}/content/{item['id']}/approve", json={
+        "revision_id": item["revision"]["id"],
+    }).status_code == 200
     pdf = client.get(download, params={"format": "pdf"})
     assert pdf.status_code == 200 and pdf.headers["content-type"] == "application/pdf"
     parsed = PdfReader(BytesIO(pdf.content))
