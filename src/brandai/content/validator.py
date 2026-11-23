@@ -83,12 +83,22 @@ def validate_copy(
     blocks = BREAKS.split(copy.body.replace("\r\n", "\n").strip()) if copy.body.strip() else []
     declared = {str(claim_id) for claim_id in copy.cited_claim_ids}
     matched: set[str] = set()
+    external = {citation.paragraph: str(citation.id) for citation in context.external}
+    declared_external = {str(evidence_id) for evidence_id in copy.cited_external_evidence_ids}
+    matched_external: set[str] = set()
     event_used = False
     for index, raw in enumerate(blocks, start=1):
         block = normalized_block(raw)
         is_event = context.event_note is not None and block == normalized_block(context.event_note)
         event_used |= is_event
-        if block in evidence:
+        if block in external:
+            evidence_id = external[block]
+            if evidence_id in declared_external:
+                matched_external.add(evidence_id)
+            else:
+                flag("missing_external_citation", "body", "Cite the archived source for this quotation.",
+                     paragraph=index, evidence_id=evidence_id)
+        elif block in evidence:
             supported = evidence[block] & declared
             matched.update(supported)
             if not supported and not is_event:
@@ -104,6 +114,12 @@ def validate_copy(
     if declared - matched or len(declared) != len(copy.cited_claim_ids):
         flag("invalid_claim_citation", "cited_claim_ids", "Cite only effective claims used in the body, once each.",
              unused_claim_ids=sorted(declared - matched))
+    if declared_external != matched_external or len(declared_external) != len(copy.cited_external_evidence_ids):
+        flag("invalid_external_citation", "cited_external_evidence_ids",
+             "Cite only archived external quotations used with their source labels.",
+             unused_evidence_ids=sorted(declared_external - matched_external))
+    if context.research_topic_id and not matched_external:
+        flag("external_evidence_required", "body", "Include an attributed quotation from the selected research brief.")
     if context.provenance.required_claim_id and context.provenance.required_claim_id not in matched:
         flag("missing_planned_claim", "body", "Include and cite the planned subject's approved claim.",
              claim_id=context.provenance.required_claim_id)

@@ -53,11 +53,12 @@ class DomainRateLimiter:
         self._last: dict[str, float] = {}
         self._locks: dict[str, asyncio.Lock] = {}
 
-    async def wait(self, url: str) -> None:
+    async def wait(self, url: str, minimum_interval: int | None = None) -> None:
         domain = urlparse(url).netloc.lower()
         lock = self._locks.setdefault(domain, asyncio.Lock())
         async with lock:
-            delay = self.interval - (time.monotonic() - self._last.get(domain, 0.0))
+            interval = max(self.interval, minimum_interval or 0)
+            delay = interval - (time.monotonic() - self._last.get(domain, 0.0))
             if delay > 0: await asyncio.sleep(delay)
             self._last[domain] = time.monotonic()
 
@@ -65,12 +66,15 @@ class DomainRateLimiter:
 class WebsiteCrawler:
     def __init__(self, *, client: httpx.AsyncClient | None = None, renderer: PageRenderer | None = None,
                  user_agent: str = "BrandAIResearchBot/0.3 (+local human-reviewed onboarding)",
-                 per_domain_interval: float = 1.0, max_pages: int = 12, min_static_chars: int = 120):
+                 per_domain_interval: float = 1.0, max_pages: int = 12, min_static_chars: int = 120,
+                 strict_robots: bool = False, collect_stylesheets: bool = True):
         self.client = client
         self.renderer = renderer
         self.user_agent = user_agent
         self.max_pages = max_pages
         self.min_static_chars = min_static_chars
+        self.strict_robots = strict_robots
+        self.collect_stylesheets = collect_stylesheets
         self.limiter = DomainRateLimiter(per_domain_interval)
         self._robots: dict[str, RobotFileParser] = {}
 
@@ -83,9 +87,15 @@ class WebsiteCrawler:
         try:
             await self.limiter.wait(robots_url)
             response = await client.get(robots_url)
-            parser.parse(response.text.splitlines() if response.status_code < 400 else [])
+            if self.strict_robots and response.status_code not in {200, 404, 410}:
+                parser.disallow_all = True
+            else:
+                parser.parse(response.text.splitlines() if response.status_code == 200 else [])
         except httpx.HTTPError:
-            parser.parse([])
+            if self.strict_robots:
+                parser.disallow_all = True
+            else:
+                parser.parse([])
         self._robots[origin] = parser
         return parser
 
@@ -108,10 +118,10 @@ class WebsiteCrawler:
                 if urlparse(url).netloc.lower() != parsed_start.netloc.lower(): continue
                 robots = await self._robots_for(url, client)
                 if not robots.can_fetch(self.user_agent, url): continue
-                await self.limiter.wait(url)
+                await self.limiter.wait(url, robots.crawl_delay(self.user_agent) if self.strict_robots else None)
                 try:
                     response = await client.get(url)
-                    if response.status_code >= 400 or "html" not in response.headers.get("content-type", ""):
+                    if not response.is_success or "html" not in response.headers.get("content-type", "").lower():
                         continue
                 except httpx.HTTPError:
                     continue
@@ -122,7 +132,8 @@ class WebsiteCrawler:
                     html = await self.renderer.render(url)
                     extracted = self._extract(html, url)
                     rendered = True
-                html = await self._with_stylesheets(html, url, parsed_start.netloc, robots, client)
+                if self.collect_stylesheets:
+                    html = await self._with_stylesheets(html, url, parsed_start.netloc, robots, client)
                 soup = BeautifulSoup(html, "html.parser")
                 links = self._links(soup, url, parsed_start.netloc)
                 page = CrawledPage(url=url, title=self._title(soup), raw_html=html,

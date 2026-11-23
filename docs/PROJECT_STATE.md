@@ -7,8 +7,8 @@ BrandAI is a local-AI, web-based Social Media and Brand Manager supporting Insta
 The React UI and FastAPI API are stateless application layers over:
 
 - `<runtime-root>/system.db` holds users, the brand registry, jobs, global reminders, and versioned platform playbooks.
-- `<runtime-root>/brands/<uuid>/brand.db` holds sources, claims, brand versions, strategies, cadence, content revisions, feedback, and photo briefs.
-- `<runtime-root>/brands/<uuid>/assets` holds brand-contained uploads and media.
+- `<runtime-root>/brands/<uuid>/brand.db` holds sources, claims, brand versions, strategies, cadence, content revisions, topic quotes, visual provenance, feedback, and photo briefs.
+- `<runtime-root>/brands/<uuid>/assets` holds brand-contained uploads and media. Rendered files live under `visuals/<visual-id>`.
 
 `BRANDAI_RUNTIME_ROOT` defaults to `C:\brandai-runtime` on Windows and `~/brandai-runtime` on macOS. Keep databases, virtual environments, browser caches, model weights, and generated media outside the checkout. Git carries source, migrations and playbook templates between machines. Each checkout uses its own local runtime root.
 
@@ -111,15 +111,43 @@ Generation returns 201 for a new item and 200 for an existing item at the same p
 
 `MockDeterministicContentProvider` and the CPU hash embedding stub are the default. On a provisioned Windows workstation, set `BRANDAI_CONTENT_PROVIDER=local` for the Qwen3.5-9B Q8 llama.cpp adapter and local CPU E5 embeddings. The local worker serializes llama.cpp leases within one API process and keeps the existing VRAM and cleanup checks. A future AWS `g7.2xlarge` worker can supply the same `GPUWorkerProvider` lease to `QwenContentProvider` via `create_app(content_provider=..., content_embeddings=...)`. The API and content domain use the leased structured interface without AWS provisioning logic. An unavailable provider returns 503.
 
+### Milestone 7 — topic research and visual asset composition
+
+- Brand migration `0006_research_and_visual_assets` adds `topic_research`, immutable `external_evidence`, and `visual_assets`. It adds research provenance to each content revision with an empty default for earlier revisions.
+- The research API accepts an explicitly public topic with optional allowed DNS domains and a content item ID. Discovery uses `SearchProvider`, then the existing static crawler enforces robots rules against each discovered page. The public transport requires HTTPS, validates all DNS answers, pins the connection to a public IP with the original TLS hostname, caps response bytes, and skips redirects. The research path never launches a browser on third-party pages. Empty results are visible as briefs with no evidence. Cached results expire for new retrieval after 24 hours, while historical citation snapshots remain available locally.
+- External evidence records the source URL, title, retrieval time, exact quoted span, and SHA-256 of the archived extracted source text. Verification checks that the quote appears verbatim in that capture. Source credibility remains part of human review. To enrich a slot or photo post, pass `research_topic` for live retrieval or `research_topic_id` for an existing brief. The validator requires an exact attributed paragraph and its evidence ID and checks brand claims independently. Revision responses include numbered source metadata. Content-scoped briefs can be attached to their existing item through a revision.
+- The `VisualPipeline` renders a generated background, an unchanged framed source photo, a subject-aware Pillow enhancement, or a hero cutout with a generated plate and soft shadow. The hero path uses only the mask channel from segmentation and keeps original foreground RGB. The background request projects locked art direction onto photographic traits and carries approved colors, composition and seed. Caption and event wording go only to Chromium.
+- Chromium composes 1:1, 4:5, 9:16, and 16:9 layouts. It uses the brand's 60/30/10 role colors for chrome, checks 4.5:1 text contrast on its opaque backdrop, uses per-block RTL/LTR typography, and checks layout bounds against brand and vertical-platform safe zones. Approved uploaded logos use one rendered mark-height of clear space. It embeds provisioned OFL font files locally. Preview rendering can use Chromium's fallback if the files are missing, and `layout.local_fonts` records which fonts were embedded.
+- Visual assets record the exact content revision or photo brief and design version, aspect, treatment, seed, provider identities, pixels, primary PNG SHA-256, and a per-file manifest. Carousels include individual PNGs, a ZIP of the frames, and a multipage PDF made from the same HTML. Re-rendering creates a new record with the same source and design plus any requested render-option changes. Downloads check the stored file digest.
+
+#### Backend routes
+
+Paths below are relative to `/api/brands/{brand_id}`.
+
+| Method and path | Purpose |
+|---|---|
+| `POST /research/topics` | Retrieve a public topic or return its cached brief. Use `refresh: true` to fetch again. |
+| `GET /research/topics` | List briefs, optionally filtered by `content_id` |
+| `GET /research/topics/{topic_id}` | Read a brief and its quotations |
+| `POST /visual-assets/render` | Render by `content_id` or `on_demand_brief_id` |
+| `GET /visual-assets` and `GET /visual-assets/{asset_id}` | List renders and inspect their provenance |
+| `POST /visual-assets/{asset_id}/rerender` | Create a render variant using the pinned source |
+| `GET /visual-assets/{asset_id}/download` | Fetch `format=png\|pdf\|zip`. PNG pages start at `page=1`. |
+
+#### macOS, Windows and AWS workers
+
+The default visual providers use a seeded Pillow gradient and an ellipse mask. Production callers can inject `VisualPipeline(FluxBackgroundProvider(worker, runner), SAM2Provider(settings, worker, runner))` with separate runners for the two capabilities. They lease `image_generation` and `foreground_segmentation` through the existing worker boundary. Windows and a future AWS `g7.2xlarge` worker can use the same contracts with provisioned runners and pinned model revisions. The macOS suite exercises both stubs and real CPU/Chromium composition. GPU inference, provisioning, and live external search are outside that verification.
+
 ## macOS backend verification
 
-Use Python 3.12 and a local runtime. The tests run against disposable brand stores with deterministic LLM, embedding and GPU worker doubles. To include the loopback browser smoke test, install Chromium in a runtime cache and leave `PLAYWRIGHT_BROWSERS_PATH` set while running pytest.
+Use Python 3.12 and a local runtime. The tests run against disposable brand stores with deterministic LLM, search, embedding and GPU worker doubles. To include the visual and loopback browser tests, install Chromium in a runtime cache and leave `PLAYWRIGHT_BROWSERS_PATH` set while running pytest. For reproducible typography, install the pinned OFL files and licenses from `licenses/font-manifest.json` and set `BRANDAI_FONT_DIR` to that font directory.
 
 ```sh
 export BRANDAI_RUNTIME_ROOT="$HOME/brandai-runtime"
 uv venv --python 3.12 "$BRANDAI_RUNTIME_ROOT/.venv"
 uv pip install --python "$BRANDAI_RUNTIME_ROOT/.venv/bin/python" -e '.[dev]'
-export BRANDAI_CONTENT_PROVIDER=mock HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export BRANDAI_CONTENT_PROVIDER=mock BRANDAI_TOPIC_RESEARCH=offline HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export BRANDAI_FONT_DIR="$BRANDAI_RUNTIME_ROOT/fonts"
 export PLAYWRIGHT_BROWSERS_PATH="$BRANDAI_RUNTIME_ROOT/cache/playwright"
 "$BRANDAI_RUNTIME_ROOT/.venv/bin/python" -m playwright install chromium
 "$BRANDAI_RUNTIME_ROOT/.venv/bin/python" -m pytest -q

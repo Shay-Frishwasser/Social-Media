@@ -279,7 +279,50 @@ class ContentRevision(BrandBase):
     visual_directive: Mapped[dict] = mapped_column(json_type(), nullable=False)
     cited_claim_ids: Mapped[list] = mapped_column(json_type(), nullable=False)
     validation_report: Mapped[dict] = mapped_column(json_type(), nullable=False)
+    research_json: Mapped[dict] = mapped_column(json_type(), nullable=False, default=dict, server_default="{}")
     embedding: Mapped[bytes | None] = mapped_column(LargeBinary)
     embedding_model: Mapped[str | None] = mapped_column(String(160))
     created_by: Mapped[str] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TopicResearch(BrandBase):
+    __tablename__ = "topic_research"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    content_id: Mapped[str | None] = mapped_column(ForeignKey("content_items.id"), index=True)
+    topic: Mapped[str] = mapped_column(Text)
+    cache_key: Mapped[str] = mapped_column(String(64), index=True)
+    domains: Mapped[list] = mapped_column(json_type(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ExternalEvidence(BrandBase):
+    __tablename__ = "external_evidence"
+    __table_args__ = (UniqueConstraint("topic_id", "ordinal"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    topic_id: Mapped[str] = mapped_column(ForeignKey("topic_research.id"), index=True)
+    ordinal: Mapped[int] = mapped_column(Integer)
+    url: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(Text)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sha256: Mapped[str] = mapped_column(String(64))
+    quoted_span: Mapped[str] = mapped_column(Text)
+    source_text: Mapped[str] = mapped_column(Text)
+
+
+class VisualAsset(BrandBase):
+    __tablename__ = "visual_assets"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    content_revision_id: Mapped[str | None] = mapped_column(ForeignKey("content_revisions.id"), index=True)
+    on_demand_brief_id: Mapped[str | None] = mapped_column(ForeignKey("on_demand_photo_briefs.id"), index=True)
+    previous_id: Mapped[str | None] = mapped_column(ForeignKey("visual_assets.id"))
+    design_system_id: Mapped[str] = mapped_column(ForeignKey("brand_design_systems.id"))
+    design_system_version: Mapped[int] = mapped_column(Integer)
+    treatment_mode: Mapped[str] = mapped_column(String(40))
+    seed: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    request_json: Mapped[dict] = mapped_column(json_type(), nullable=False)
+    output_json: Mapped[dict] = mapped_column(json_type(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

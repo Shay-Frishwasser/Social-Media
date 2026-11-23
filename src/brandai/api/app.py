@@ -4,6 +4,7 @@ import os
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import UUID
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,13 +23,22 @@ from brandai.enums import PhotoTreatmentMode
 from brandai.errors import BrandAIError, NotFoundError
 from brandai.onboarding.assets import MaterialIngestor
 from brandai.onboarding.embeddings import E5EmbeddingProvider, EmbeddingProvider
+from brandai.onboarding.search import DDGSSearchProvider, SearchProvider
 from brandai.repositories import ClaimRepository, GlobalRepository, OnDemandPhotoRepository, VersionRepository
+from brandai.research.network import PublicTopicCrawler
+from brandai.research.service import TopicCrawler, TopicResearchService
 from brandai.strategy.generator import DeterministicStrategyPlanner, StrategyPlanner
+from brandai.visual_studio.images import VisualPipeline
+from brandai.visual_studio.providers import EllipseSegmentationProvider, GradientBackgroundProvider
+from brandai.visual_studio.renderer import ChromiumRenderer
+from brandai.visual_studio.service import VisualService
 from .content import content_router
 from .planning import planning_router
 from .schemas import (BrandCreate, ClaimDecision, ClaimOverride, DesignSystemUpdate,
                       KnowledgeGapAnswer, PhotoBriefCreate, ResearchRequest)
 from .services import local_llm_worker, run_onboarding_job
+from .topic_research import topic_router
+from .visual_assets import visual_router
 
 
 def _design_dict(row: BrandDesignSystem) -> dict:
@@ -43,10 +53,12 @@ def create_app(
     strategy_planner: StrategyPlanner | None = None,
     content_provider: ContentLLMProvider | None = None, content_embeddings: EmbeddingProvider | None = None,
     content_diversity: DiversitySettings | None = None,
+    topic_search: SearchProvider | None = None, topic_crawler: TopicCrawler | None = None,
+    visual_pipeline: VisualPipeline | None = None,
 ) -> FastAPI:
     settings = settings or RuntimeSettings.from_env()
     store = BrandAIStore(settings)
-    app = FastAPI(title="BrandAI Local", version="0.6.0")
+    app = FastAPI(title="BrandAI Local", version="0.7.0")
     app.state.store = store
     app.state.run_background_jobs = run_background_jobs
     app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -168,9 +180,13 @@ def create_app(
             return _design_dict(row)
 
     @app.post("/api/brands/{brand_id}/assets", status_code=201)
-    async def upload_asset(brand_id: str, file: UploadFile = File(...), kind: str = "product_photo"):
+    async def upload_asset(brand_id: UUID, file: UploadFile = File(...), kind: str = "product_photo"):
+        identifier = str(brand_id)
+        store.brand_engine(identifier).dispose()
         suffix = Path(file.filename or "upload.bin").suffix.lower()
-        incoming = settings.brand_dir(brand_id) / "incoming"
+        incoming = settings.brand_dir(identifier).resolve() / "incoming"
+        if incoming.resolve() != incoming:
+            raise HTTPException(409, "the brand upload directory cannot be redirected")
         incoming.mkdir(parents=True, exist_ok=True)
         descriptor, temporary = tempfile.mkstemp(suffix=suffix, dir=incoming)
         os.close(descriptor)
@@ -182,10 +198,16 @@ def create_app(
                     size += len(chunk)
                     if size > 25 * 1024 * 1024: raise HTTPException(413, "asset exceeds 25 MiB")
                     output.write(chunk)
-            with store.brand_session(brand_id) as session:
+            with store.brand_session(identifier) as session:
                 embeddings = E5EmbeddingProvider(
                     settings.directory("BRANDAI_EMBEDDINGS_DIR", "models/embeddings/multilingual-e5-base"))
-                row = MaterialIngestor(session, settings.brand_assets_dir(brand_id), embeddings).ingest_asset(temp_path, kind=kind)
+                root = settings.brand_assets_dir(identifier).resolve()
+                if root != settings.brand_dir(identifier).resolve() / "assets":
+                    raise HTTPException(409, "the brand asset directory cannot be redirected")
+                try:
+                    row = MaterialIngestor(session, root, embeddings).ingest_asset(temp_path, kind=kind)
+                except (ValueError, OSError) as exc:
+                    raise HTTPException(422, "unsupported or invalid image asset") from exc
                 return {"id": row.id, "kind": row.kind, "path": row.path, "metadata": row.metadata_json}
         finally:
             temp_path.unlink(missing_ok=True)
@@ -227,9 +249,20 @@ def create_app(
             E5EmbeddingProvider(settings.directory("BRANDAI_EMBEDDINGS_DIR", "models/embeddings/multilingual-e5-base"))
             if isinstance(content_provider, QwenContentProvider) else HashEmbeddingProvider()
         )
-    content_service = ContentService(store, content_provider, content_embeddings, content_diversity or DiversitySettings())
+    topic_service = TopicResearchService(
+        store, topic_search or DDGSSearchProvider(), topic_crawler or PublicTopicCrawler(),
+        enabled=os.getenv("BRANDAI_TOPIC_RESEARCH", "live") != "offline",
+    )
+    content_service = ContentService(store, content_provider, content_embeddings,
+                                     content_diversity or DiversitySettings(), research=topic_service)
     app.state.content_service = content_service
     app.include_router(content_router(content_service))
+    app.include_router(topic_router(topic_service))
+    visual_service = VisualService(
+        store, visual_pipeline or VisualPipeline(GradientBackgroundProvider(), EllipseSegmentationProvider()),
+        ChromiumRenderer(settings.directory("BRANDAI_FONT_DIR", "fonts")),
+    )
+    app.include_router(visual_router(visual_service))
     web_dist = Path(__file__).resolve().parents[3] / "web" / "dist"
     if web_dist.exists(): app.mount("/", StaticFiles(directory=web_dist, html=True), name="web")
     return app

@@ -36,7 +36,8 @@ def _summary(row: ContentItem) -> ContentSummary:
 
 
 def revision_copy(row: ContentRevision) -> DraftCopy:
-    return DraftCopy(hook=row.hook, body=row.body, cta=row.cta, hashtags=row.hashtags, cited_claim_ids=row.cited_claim_ids)
+    return DraftCopy(hook=row.hook, body=row.body, cta=row.cta, hashtags=row.hashtags, cited_claim_ids=row.cited_claim_ids,
+                     cited_external_evidence_ids=row.research_json.get("cited_external_evidence_ids", []))
 
 
 def _revision(row: ContentRevision) -> ContentRevisionResponse:
@@ -44,6 +45,8 @@ def _revision(row: ContentRevision) -> ContentRevisionResponse:
         **revision_copy(row).model_dump(), id=row.id, version=row.version, created_by=row.created_by,
         created_at=_aware(row.created_at), visual_directive=row.visual_directive,
         hebrew_register_check=row.hebrew_register_check, validation_report=row.validation_report,
+        research_topic_id=row.research_json.get("research_topic_id"),
+        external_citations=row.research_json.get("external_citations", []),
     )
 
 
@@ -105,9 +108,16 @@ class ContentRepository:
     def append(
         self, row: ContentItem, copy: DraftCopy, visual: VisualDirective, voice: HebrewRegisterCheck,
         report: ValidationReport, actor: str, *, version: int, embedding: bytes | None, embedding_model: str | None,
+        prepared: PreparedContent,
     ) -> ContentResponse:
+        declared = set(copy.cited_external_evidence_ids)
         self.session.add(ContentRevision(
-            content_id=row.id, version=version, **copy.model_dump(mode="json"),
+            content_id=row.id, version=version, **copy.model_dump(mode="json", exclude={"cited_external_evidence_ids"}),
+            research_json={
+                "research_topic_id": prepared.research_topic_id,
+                "cited_external_evidence_ids": [str(identifier) for identifier in copy.cited_external_evidence_ids],
+                "external_citations": [item.model_dump(mode="json") for item in prepared.external if item.id in declared],
+            },
             visual_directive=visual.model_dump(mode="json"), hebrew_register_check=voice.model_dump(mode="json"),
             validation_report=report.model_dump(mode="json"), created_by=actor,
             embedding=embedding, embedding_model=embedding_model,

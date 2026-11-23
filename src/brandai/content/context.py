@@ -11,6 +11,8 @@ from brandai.db.brand_models import CadencePlan, OnDemandPhotoBrief, PlannedCont
 from brandai.errors import GenerationBlockedError, NotFoundError
 from brandai.on_demand import PhotoTreatmentPlanner
 from brandai.repositories import VersionRepository
+from brandai.research.models import ExternalCitation
+from brandai.research.service import evidence_for_topic
 from brandai.store import BrandAIStore
 from brandai.strategy.calendar import allowed_claims
 from brandai.strategy.generator import approved_evidence, evidence_text
@@ -39,6 +41,8 @@ class PreparedContent:
     address: HebrewAddress
     template_ids: tuple[str, ...]
     default_visual: VisualDirective
+    research_topic_id: str | None
+    external: tuple[ExternalCitation, ...]
 
     def directive(self, selection: VisualSelection) -> VisualDirective:
         return self.default_visual.model_copy(update={"selection": selection})
@@ -75,6 +79,7 @@ def prepare_content(
     store: BrandAIStore, session: Session, *, slot_id: str | None = None, brief_id: str | None = None,
     language: Language | None = None, pinned_strategy_id: str | None = None,
     pinned_context: ContentContext | None = None,
+    research_topic_id: str | None = None, research_content_id: str | None = None,
 ) -> PreparedContent:
     slot = session.get(PlannedContentSlot, slot_id) if slot_id else None
     if slot_id and slot is None:
@@ -164,6 +169,9 @@ def prepare_content(
             style_prefix=direction.flux_style_prefix, color_roles=direction.color_roles,
             constraints={**direction.flux_constraints, "text_free": True, "no_letters": True, "no_logos": True},
         )
+    external = evidence_for_topic(session, research_topic_id, research_content_id) if research_topic_id else ()
+    if research_topic_id and not external:
+        raise GenerationBlockedError("the research brief has no verifiable external quotations")
     return PreparedContent(
         strategy_id=strategy.id, slot_id=slot.id if slot else None, brief_id=brief.id if brief else None,
         platform=platform, depth=depth, language=language,
@@ -175,4 +183,5 @@ def prepare_content(
         facts=facts, event_note=event_note, hooks=hooks, ctas=ctas, hashtags=hashtags,
         register=document.messaging_register, address=document.hebrew_address, template_ids=templates,
         default_visual=visual,
+        research_topic_id=research_topic_id, external=external,
     )

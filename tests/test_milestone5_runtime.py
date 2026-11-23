@@ -42,6 +42,9 @@ def test_existing_brand_is_migrated_on_first_access(store):
     engine = store.brand_engine(brand.id)
     try:
         with engine.begin() as connection:
+            connection.execute(text("DROP TABLE visual_assets"))
+            connection.execute(text("DROP TABLE external_evidence"))
+            connection.execute(text("DROP TABLE topic_research"))
             connection.execute(text("DROP TABLE content_revisions"))
             connection.execute(text("DROP TABLE content_items"))
             connection.execute(text("DROP TABLE planned_content_slots"))

@@ -13,6 +13,8 @@ from brandai.db.base import utcnow
 from brandai.db.brand_models import ContentItem, ContentRevision
 from brandai.errors import GenerationBlockedError, InvalidStateTransitionError
 from brandai.onboarding.embeddings import EmbeddingProvider
+from brandai.research.models import TopicRequest
+from brandai.research.service import TopicResearchService
 from brandai.store import BrandAIStore
 from brandai.strategy.models import Platform
 
@@ -40,10 +42,11 @@ class Evaluation:
 class ContentService:
     def __init__(
         self, store: BrandAIStore, provider: ContentLLMProvider, embeddings: EmbeddingProvider,
-        diversity: DiversitySettings,
+        diversity: DiversitySettings, research: TopicResearchService | None = None,
     ):
         self.store, self.provider = store, provider
         self.scorer = DiversityScorer(embeddings, diversity)
+        self.research = research
 
     def list_content(self, brand_id: str, *, platform: Platform | None, status: ContentStatus | None,
                      limit: int, offset: int) -> list[ContentSummary]:
@@ -59,12 +62,21 @@ class ContentService:
     def generate(
         self, brand_id: str, payload: ContentGenerate, *, slot_id: str | None = None, brief_id: str | None = None,
     ) -> tuple[ContentResponse, bool]:
-        sources = {"slot_id": slot_id, "brief_id": brief_id, "language": None if payload.language == "auto" else payload.language}
+        topic_id = str(payload.research_topic_id) if payload.research_topic_id else None
+        if payload.research_topic:
+            with self.store.brand_session(brand_id) as session:
+                prepare_content(self.store, session, slot_id=slot_id, brief_id=brief_id)
+            if self.research is None:
+                raise GenerationBlockedError("live topic research is unavailable")
+            topic, _ = self.research.run(brand_id, TopicRequest(topic=payload.research_topic))
+            topic_id = str(topic.id)
+        sources = {"slot_id": slot_id, "brief_id": brief_id, "research_topic_id": topic_id,
+                   "language": None if payload.language == "auto" else payload.language}
         with self.store.brand_session(brand_id) as session:
             prepared = prepare_content(self.store, session, **sources)
             repo = ContentRepository(session, brand_id)
             if existing := repo.existing(prepared):
-                return repo.response(existing), False
+                return self._existing_response(repo, existing, topic_id)
 
         attempts: list[ValidationAttempt] = []
         feedback: list[Violation] = []
@@ -79,7 +91,7 @@ class ContentService:
                 self._require_unchanged(prepared, fresh)
                 repo = ContentRepository(session, brand_id)
                 if existing := repo.existing(prepared):
-                    return repo.response(existing), False
+                    return self._existing_response(repo, existing, topic_id)
                 self._check_diversity(repo, copy, evaluation)
                 feedback = evaluation.violations
                 attempts.append(ValidationAttempt(number=attempt_number, violations=feedback))
@@ -88,6 +100,13 @@ class ContentService:
                 row = repo.create(prepared)
                 return self._append(repo, row, copy, selection, prepared, evaluation, attempts, payload.created_by, version=1), True
         raise AssertionError("generation must finalize on the second attempt")
+
+    @staticmethod
+    def _existing_response(repo: ContentRepository, item: ContentItem, topic_id: str | None) -> tuple[ContentResponse, bool]:
+        response = repo.response(item)
+        if topic_id and str(response.revision.research_topic_id) != topic_id:
+            raise GenerationBlockedError("this placement already has content; attach the research brief in a revision")
+        return response, False
 
     def _propose(self, prepared: PreparedContent, feedback: list[Violation]) -> tuple[DraftCopy, list[Violation]]:
         try:
@@ -138,7 +157,8 @@ class ContentService:
             attempts=attempts, event_note_used=evaluation.event_used,
         )
         return repo.append(row, copy, prepared.directive(selection), evaluation.voice, report, actor,
-                           version=version, embedding=evaluation.embedding, embedding_model=evaluation.embedding_model)
+                           version=version, embedding=evaluation.embedding, embedding_model=evaluation.embedding_model,
+                           prepared=prepared)
 
     @staticmethod
     def _check_head(revision: ContentRevision, expected: str) -> None:
@@ -150,11 +170,12 @@ class ContentService:
         if previous != current:
             raise GenerationBlockedError("content inputs changed during processing; retry with the current inputs")
 
-    def _current_context(self, repo: ContentRepository, row: ContentItem) -> PreparedContent:
+    def _current_context(self, repo: ContentRepository, row: ContentItem, topic_id: str | None) -> PreparedContent:
         return prepare_content(
             self.store, repo.session, slot_id=row.cadence_slot_id, brief_id=row.on_demand_brief_id,
             language=row.language, pinned_strategy_id=row.strategy_id,
             pinned_context=ContentContext.model_validate(row.context_json),
+            research_topic_id=topic_id, research_content_id=row.id,
         )
 
     def patch(self, brand_id: str, content_id: str, payload: ContentPatch) -> ContentResponse:
@@ -162,8 +183,12 @@ class ContentService:
             repo = ContentRepository(session, brand_id)
             row = repo.get(content_id)
             latest = self._editable_head(repo, row, str(payload.revision_id))
-            prepared = self._current_context(repo, row)
-            copy_fields = payload.model_dump(exclude_unset=True, exclude={"revision_id", "edited_by", "visual_directive"})
+            topic_id = latest.research_json.get("research_topic_id")
+            if "research_topic_id" in payload.model_fields_set:
+                topic_id = str(payload.research_topic_id) if payload.research_topic_id else None
+            prepared = self._current_context(repo, row, topic_id)
+            copy_fields = payload.model_dump(exclude_unset=True,
+                                             exclude={"revision_id", "edited_by", "visual_directive", "research_topic_id"})
             copy = DraftCopy.model_validate({**revision_copy(latest).model_dump(), **copy_fields})
             selection = payload.visual_directive or VisualSelection.model_validate(latest.visual_directive["selection"])
         evaluation = self._evaluate(copy, selection, prepared)
@@ -171,7 +196,7 @@ class ContentService:
             repo = ContentRepository(session, brand_id)
             row = repo.get(content_id)
             latest = self._editable_head(repo, row, str(payload.revision_id))
-            self._require_unchanged(prepared, self._current_context(repo, row))
+            self._require_unchanged(prepared, self._current_context(repo, row, topic_id))
             self._check_diversity(repo, copy, evaluation, omit_id=row.id)
             attempt = ValidationAttempt(number=1, violations=evaluation.violations)
             return self._append(
@@ -236,7 +261,7 @@ class ContentService:
     def _revalidate_saved_copy(
         self, repo: ContentRepository, row: ContentItem, revision: ContentRevision, *, check_diversity: bool,
     ) -> None:
-        prepared = self._current_context(repo, row)
+        prepared = self._current_context(repo, row, revision.research_json.get("research_topic_id"))
         copy = revision_copy(revision)
         selection = VisualSelection.model_validate(revision.visual_directive["selection"])
         evaluation = self._evaluate(copy, selection, prepared, prior=revision)

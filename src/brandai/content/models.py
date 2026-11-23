@@ -3,8 +3,9 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 
+from brandai.research.models import ExternalCitation
 from brandai.strategy.models import (
-    Actor, Approval, Depth, EffectivePlaybook, HebrewAddress, Model, Platform, Register, VersionReference,
+    Actor, Approval, Depth, EffectivePlaybook, HebrewAddress, Model, Platform, Register, Topic, VersionReference,
 )
 
 
@@ -31,6 +32,7 @@ class DraftCopy(Model):
     cta: CopyText = ""
     hashtags: list[Hashtag] = Field(default_factory=list, max_length=30)
     cited_claim_ids: list[UUID] = Field(default_factory=list, max_length=32)
+    cited_external_evidence_ids: list[UUID] = Field(default_factory=list, max_length=8)
 
 
 class VisualSelection(Model):
@@ -111,6 +113,14 @@ class ContentContext(Model):
 class ContentGenerate(Model):
     language: Literal["auto", "he", "en"] = "auto"
     created_by: Actor = "local-owner"
+    research_topic: Topic | None = None
+    research_topic_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_research(self) -> Self:
+        if self.research_topic and self.research_topic_id:
+            raise ValueError("choose a topic to research or an existing topic brief")
+        return self
 
 
 class ContentPatch(Model):
@@ -121,12 +131,14 @@ class ContentPatch(Model):
     cta: CopyText | None = None
     hashtags: list[Hashtag] | None = Field(default=None, max_length=30)
     cited_claim_ids: list[UUID] | None = Field(default=None, max_length=32)
+    cited_external_evidence_ids: list[UUID] | None = Field(default=None, max_length=8)
+    research_topic_id: UUID | None = None
     visual_directive: VisualSelection | None = None
 
     @model_validator(mode="after")
     def validate_changes(self) -> Self:
         changes = self.model_dump(exclude_unset=True, exclude={"revision_id", "edited_by"})
-        if not changes or any(value is None for value in changes.values()):
+        if not changes or any(value is None for key, value in changes.items() if key != "research_topic_id"):
             raise ValueError("provide at least one non-null copy or visual field to edit")
         return self
 
@@ -143,6 +155,8 @@ class ContentRevisionResponse(DraftCopy):
     validation_report: ValidationReport
     created_by: Actor
     created_at: AwareDatetime
+    research_topic_id: UUID | None = None
+    external_citations: list[ExternalCitation] = Field(default_factory=list)
 
 
 class ContentSummary(Model):

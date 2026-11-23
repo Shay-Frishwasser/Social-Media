@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-import re
 import shutil
 from pathlib import Path
-from xml.etree import ElementTree
 
 from PIL import Image
 from sqlalchemy.orm import Session
@@ -12,6 +10,7 @@ from sqlalchemy.orm import Session
 from brandai.repositories import AssetRepository, SourceRepository
 from .embeddings import EmbeddingProvider
 from .ingestion import EvidenceIngestor
+from .safe_svg import static_svg
 
 
 MAX_ASSET_BYTES = 25 * 1024 * 1024
@@ -48,16 +47,12 @@ class MaterialIngestor:
     @staticmethod
     def _validate(path: Path) -> dict:
         if path.suffix.lower() == ".svg":
-            raw = path.read_text(encoding="utf-8")
-            if re.search(r"<(?:script|foreignObject)\b|\bon\w+\s*=|(?:href|src)\s*=\s*['\"]https?", raw, re.I):
-                raise ValueError("unsafe active or external SVG content")
-            root = ElementTree.fromstring(raw)
-            if not root.tag.lower().endswith("svg"): raise ValueError("invalid SVG root")
-            width, height = root.get("width"), root.get("height")
-            if not (width and height) and not root.get("viewBox"): raise ValueError("SVG needs dimensions or viewBox")
+            _, width, height, view_box = static_svg(path.read_bytes())
             return {"media_type": "image/svg+xml", "width": width, "height": height,
-                    "view_box": root.get("viewBox"), "has_alpha": True}
+                    "view_box": view_box, "has_alpha": True}
         with Image.open(path) as image:
+            if image.format not in {"JPEG", "PNG", "WEBP"}:
+                raise ValueError("unsupported raster format")
             image.verify()
         with Image.open(path) as image:
             width, height = image.size

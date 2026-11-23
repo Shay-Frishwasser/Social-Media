@@ -9,6 +9,7 @@ This file is binding context for Codex and other coding agents working in this r
 - Internet access is allowed only for public brand research, transactional email, and future official social publishing connectors.
 - Generated content always passes deterministic grounding/format checks and human approval. Never present LLM self-review as a trusted approval gate.
 - User edits outrank observed claims; approved observed claims outrank inferences. Observed claims require a source ID and verbatim quoted span.
+- External research uses only explicitly supplied public topics, strict robots checks and public HTTPS. Keep each quotation with its source URL, retrieval time and hash. Content may quote a research brief only within that brand and the brief's content scope.
 - Do not mutate immutable brand-profile, design-system, or content-revision rows. Append a new version.
 
 ## Repository/runtime split
@@ -28,6 +29,7 @@ This file is binding context for Codex and other coding agents working in this r
 - Typography/composition: Playwright Chromium with Heebo, Assistant, Rubik, Noto Sans Hebrew, and Inter (OFL).
 - Foreground segmentation for `hero_cutout_scene` uses the Meta SAM 2.1 adapter contract for the Apache-2.0 tiny or small checkpoints. Provision an explicit worker runner and pinned checkpoint before executing it. BiRefNet stays disabled pending commercial training-dataset provenance sign-off.
 - GPU work must go through `GPUWorkerProvider`/`SingleGPUController`, verify free VRAM with `nvidia-smi`, and verify cleanup after process termination.
+- Pixel generation receives text-free photographic traits and palette data. Chromium places approved copy and local brand chrome. Hero cutouts take alpha from segmentation and RGB from the original photo. Visual exports and provenance stay under the selected brand's asset root.
 
 ## Storage and security rules
 
@@ -49,8 +51,8 @@ cd web; npm install; npm run build
 
 Run Alembic through `BrandAIStore`; global and per-brand migration histories are independent. Tests must use `tmp_path` runtime roots and must not leave production brand rows.
 
-On macOS, use Python 3.12 and keep the virtual environment and Playwright cache under the runtime root. Use `BRANDAI_CONTENT_PROVIDER=mock` for deterministic content verification. The default pytest suite uses deterministic LLM, embedding and segmentation worker doubles. Run the optional Chromium smoke case with `PLAYWRIGHT_BROWSERS_PATH` pointing to a locally installed Playwright Chromium cache. It uses loopback only.
+On macOS, use Python 3.12 and keep the virtual environment, approved OFL fonts and Playwright cache under the runtime root. Use `BRANDAI_CONTENT_PROVIDER=mock` and `BRANDAI_TOPIC_RESEARCH=offline` for deterministic verification. Tests inject search, LLM, embeddings, gradient backgrounds and alpha masks as needed. Set `PLAYWRIGHT_BROWSERS_PATH` to a local Chromium cache to exercise real Pillow composition, browser PNG/PDF rendering and the loopback crawler smoke test.
 
 ## Current milestone state
 
-Milestones 0–6 are implemented. Strategy and cadence remain brand-local, with human approval, Asia/Jerusalem scheduling and exact playbook provenance. Content requires an approved strategy plus an approved cadence slot or a saved on-demand brief. Copy must pass exact evidence, citation, platform and diversity checks before human review. Every content edit appends an immutable revision, and human approval names the current revision explicitly. Read `docs/PROJECT_STATE.md` for schemas, routes and runtime setup. Do not start Milestone 7 without explicit approval.
+Milestones 0–7 are implemented. Strategy and cadence remain brand-local, with human approval, Asia/Jerusalem scheduling and exact playbook provenance. Content requires an approved strategy plus an approved cadence slot or a saved on-demand brief. Exact brand evidence and optionally attributed external quotations pass validation before human review. Visual previews record their design and source revisions, render decisions and file hashes. Read `docs/PROJECT_STATE.md` for schemas, routes and runtime setup. Do not start Milestone 8 without explicit approval.
