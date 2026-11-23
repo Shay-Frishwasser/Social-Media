@@ -12,8 +12,10 @@ def jobs_router(queue: JobQueue, runner: JobRunner, *, queue_only: bool = False)
 
     @router.post("", status_code=202)
     def enqueue(brand_id: UUID, job: JobEnqueue) -> JobResponse:
-        return queue.enqueue(str(brand_id), job.kind, job.idempotency_key, job.payload.model_dump(mode="json"),
-                             max_attempts=job.max_attempts)
+        payload = job.payload.model_dump(mode="json")
+        if job.kind == "onboarding_research" and not payload["social_handles"]:
+            payload.pop("social_handles")
+        return queue.enqueue(str(brand_id), job.kind, job.idempotency_key, payload, max_attempts=job.max_attempts)
 
     @router.get("")
     def list_jobs(brand_id: UUID, status: JobStatus | None = None) -> list[JobResponse]:

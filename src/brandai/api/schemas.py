@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, StringConstraints
+
+from brandai.jobs.models import SocialHandles
 
 
 class BrandCreate(BaseModel):
@@ -12,6 +14,7 @@ class BrandCreate(BaseModel):
 class ResearchRequest(BaseModel):
     website_url: HttpUrl
     company_name: str = Field(min_length=1, max_length=250)
+    social_handles: SocialHandles = Field(default_factory=list)
 
 
 class ClaimDecision(BaseModel):
@@ -46,3 +49,12 @@ class PhotoBriefCreate(BaseModel):
     platform: Literal["instagram", "tiktok", "linkedin", "facebook", "youtube", "x"]
     transient_overrides: dict = {}
     created_by: str = "local-owner"
+
+
+FactText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=600)]
+
+
+class ManualProfileRequest(BaseModel):
+    offering: FactText
+    audience: FactText
+    differentiator: FactText

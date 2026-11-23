@@ -60,3 +60,7 @@ On macOS, use Python 3.12 and keep the virtual environment, approved OFL fonts a
 Milestones 0–8 are implemented. Brand-local jobs use leased execution, safe retry and dead-letter states. Publishing requires the exact current approved content and render at export, schedule and execution time. AWS mode uses a dedicated queue process for privately leased GPU jobs. Read `docs/PROJECT_STATE.md` and `deploy/aws/DEPLOYMENT.md` for schemas, routes and runtime setup. Keep subsequent milestone work subject to explicit approval.
 
 The [UX handoff specification](docs/UX_HANDOFF_SPEC.md) documents the Hebrew-first workspace, including current backend gates and interactions that need future endpoints. Use the [Figma import guide](design/figma/FIGMA_IMPORT_GUIDE.md) for the English-labeled RTL wireframes, design tokens and editable Figma board.
+
+## Local React workspace
+
+After installing Python dependencies into the runtime environment, start the full app with that environment's Python and `scripts/run_local.py`. The launcher builds the frontend, binds FastAPI to `127.0.0.1:8000`, and starts the local queue worker. Add `--dev` for Vite at `127.0.0.1:5173`. The default uses deterministic providers, verbatim public-site excerpts and manual brand intake. Add `--offline` to use manual intake and saved research only. A provisioned Windows workstation can add `--provider local` for native text inference and automated brand research. See [local setup and verification](docs/PROJECT_STATE.md#local-web-workspace).

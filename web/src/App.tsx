@@ -1,39 +1,156 @@
-import{useEffect,useMemo,useState}from'react';
-import{BadgeCheck,BookOpen,ChevronDown,ExternalLink,ImagePlus,LayoutDashboard,Palette,Plus,Sparkles,Upload,Workflow}from'lucide-react';
-import{api,Brand,Claim}from'./api';
+import {useCallback, useEffect, useState} from 'react'
+import {BookOpen, CalendarDays, CircleDot, ImagePlus, Menu, Palette, Plus, Send, Sparkles, Workflow} from 'lucide-react'
+import {api, brandPath, write} from './api'
+import {useLocalFonts} from './fonts'
+import type {Brand, Capabilities, Job} from './models'
+import {Busy, Dialog, Empty, ErrorNote, Status, useAction, useQuery} from './ui'
+import {Onboarding, Identity, DesignStudio} from './screens/Brand'
+import {Calendar, StrategyStudio} from './screens/Planning'
+import {PhotoStudio} from './screens/Photo'
+import {ContentStudio} from './screens/Content'
+import {Publishing} from './screens/Publishing'
 
-type Tab='claims'|'design'|'photo';
-const fonts=['Heebo','Assistant','Rubik','Noto Sans Hebrew','Inter'];
-const modes=[['original_branded','מקור ממותג','התמונה נשארת בשלמותה; מוסיפים מסגרת, לוגו וטיפוגרפיה.'],['smart_enhance','שיפור חכם','חיתוך לפלטפורמה ושיפור אור, ניגודיות וצבע.'],['hero_cutout_scene','סטודיו Wow','חיתוך המוצר, רקע סטודיו חדש והלחנה ממותגת.']];
-const defaultDesign={colors:{primary:'#2457D6',secondary:'#17223B',accent:'#F4B942'},font_pairings:{hebrew_family:'Heebo',english_family:'Inter'},logo_safe_zones:{safe_zone_percent:6,minimum_clear_space:'1x on every side'},layout_templates:['editorial_hero','educational_card'],flux_style_prefix:'cohesive editorial brand photography, intentional negative space, text-free',flux_constraints:{text_free:true,no_letters:true,no_logos:true}};
-
-function ratio(a:string,b:string){const l=(hex:string)=>{const c=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return .2126*c[0]+.7152*c[1]+.0722*c[2]};return(Math.max(l(a),l(b))+.05)/(Math.min(l(a),l(b))+.05)}
-
-export default function App(){
- const[brands,setBrands]=useState<Brand[]>([]),[brand,setBrand]=useState<Brand>(),[tab,setTab]=useState<Tab>('claims'),[claims,setClaims]=useState<Claim[]>([]),[profile,setProfile]=useState<any>(),[design,setDesign]=useState<any>(defaultDesign),[assets,setAssets]=useState<any[]>([]),[notice,setNotice]=useState('');
- const loadBrands=()=>api<Brand[]>('/brands').then(rows=>{setBrands(rows);if(!brand&&rows[0])setBrand(rows[0])});
- useEffect(()=>{loadBrands()},[]);
- useEffect(()=>{if(!brand)return;Promise.allSettled([api<Claim[]>(`/brands/${brand.id}/claims`).then(setClaims),api(`/brands/${brand.id}/profile`).then(setProfile),api(`/brands/${brand.id}/design-system`).then(setDesign),api<any[]>(`/brands/${brand.id}/assets`).then(setAssets)])},[brand]);
- const createBrand=async()=>{const name=prompt('שם החברה או המותג');if(name){const row=await api<Brand>('/brands',{method:'POST',body:JSON.stringify({name})});setBrands([row,...brands]);setBrand(row)}};
- const flash=(message:string)=>{setNotice(message);setTimeout(()=>setNotice(''),2600)};
- return <div className="shell">
-  <aside><div className="logo"><span>BA</span><div>BrandAI<small>מרכז ניהול מותג</small></div></div><label className="eyebrow">מותג פעיל</label><button className="brand-picker"><span>{brand?.name||'בחרו מותג'}</span><ChevronDown size={16}/></button><div className="brand-list">{brands.map(item=><button key={item.id} className={brand?.id===item.id?'active':''} onClick={()=>setBrand(item)}>{item.name}</button>)}</div><button className="new-brand" onClick={createBrand}><Plus size={17}/>מותג חדש</button><nav><button><LayoutDashboard/>סקירה</button><button className={tab==='claims'?'selected':''} onClick={()=>setTab('claims')}><BookOpen/>אימות זהות</button><button className={tab==='design'?'selected':''} onClick={()=>setTab('design')}><Palette/>שפה חזותית</button><button className={tab==='photo'?'selected':''} onClick={()=>setTab('photo')}><ImagePlus/>פוסט מהיר</button></nav><div className="local"><span/>רץ מקומית על המחשב<small>המידע וה-AI נשארים אצלך</small></div></aside>
-  <main><header><div><p className="eyebrow">{brand?.name||'BrandAI'}</p><h1>{tab==='claims'?'אימות זהות המותג':tab==='design'?'סטודיו לשפה חזותית':'פוסט תמונה לפי דרישה'}</h1></div><div className="status"><span>{profile?.status==='APPROVED'?'מאושר':'ממתין לאישור'}</span><b>{claims.filter(c=>c.status==='APPROVED').length}/{claims.length}</b></div></header>
-   {notice&&<div className="toast"><BadgeCheck/> {notice}</div>}
-   {tab==='claims'&&<Claims brand={brand} claims={claims} setClaims={setClaims} profile={profile} flash={flash}/>} 
-   {tab==='design'&&<Design brand={brand} design={design} setDesign={setDesign} flash={flash}/>} 
-   {tab==='photo'&&<Photo brand={brand} assets={assets} setAssets={setAssets} flash={flash}/>} 
-  </main>
- </div>
+const pages = {
+  onboarding: {title: 'הקמת מותג', note: 'התחילו במחקר פומבי או הזינו את עובדות המותג בעצמכם.', icon: CircleDot},
+  identity: {title: 'זהות ואימות עובדות', note: 'בדקו את הראיות ואשרו את פרופיל המותג.', icon: BookOpen},
+  design: {title: 'שפה חזותית', note: 'הגדירו שפה עקבית לצבע, לטיפוגרפיה ולצילום.', icon: Palette},
+  strategy: {title: 'אסטרטגיה וכללי פלטפורמה', note: 'בנו תוכנית עם עמודי תוכן, סגנון כתיבה וכללים לכל ערוץ.', icon: Workflow},
+  calendar: {title: 'לוח תוכן', note: 'תכננו ושריינו משבצות תוכן בשעון ישראל.', icon: CalendarDays},
+  photo: {title: 'סטודיו לפוסט תמונה', note: 'הפכו תמונת מוצר אמיתית לפוסט בשפת המותג.', icon: ImagePlus},
+  content: {title: 'סטודיו תוכן', note: 'כתבו, בדקו מקורות והכינו תוצרים מהגרסה הנוכחית.', icon: Sparkles},
+  publishing: {title: 'פרסום ומסירה', note: 'בדקו את הדרישות לפני ייצוא קבצים או שליחה לערוץ.', icon: Send},
 }
 
-function Claims({brand,claims,setClaims,profile,flash}:any){
- const override=async(c:Claim)=>{const value=prompt('ערך מתוקן',String(c.value));if(value&&brand){await api(`/brands/${brand.id}/claims/${c.id}/override`,{method:'POST',body:JSON.stringify({value})});setClaims(await api(`/brands/${brand.id}/claims`));flash('התיקון נשמר כגרסה מאושרת')}};
- const approve=async(c:Claim)=>{await api(`/brands/${brand.id}/claims/${c.id}/approve`,{method:'POST',body:'{}'});setClaims(claims.map((x:Claim)=>x.id===c.id?{...x,status:'APPROVED'}:x));flash('הטענה אושרה')};
- return <><section className="intro"><div><h2>כל עובדה נשארת מחוברת למקור</h2><p>בדקו את הציטוט, שנו מסקנות והשלימו פערים. שום תוכן לא ייווצר לפני אישור מלא.</p></div><div className="legend"><span className="observed">נצפה במקור</span><span className="inferred">הסקת AI</span></div></section><div className="claim-grid">{claims.map((c:Claim)=><article className="claim" key={c.id}><div className="claim-top"><span className={c.origin}>{c.origin==='observed'?'עובדה נצפית':'השערה לבדיקה'}</span><span className="confidence">{Math.round(c.confidence*100)}% ביטחון</span></div><label>{c.field_key.replaceAll('_',' ')}</label><h3>{String(c.value)}</h3>{c.quoted_span&&<blockquote>״{c.quoted_span}״</blockquote>}{c.source?.url&&<a href={c.source.url} target="_blank">{c.source.title||'פתיחת המקור'} <ExternalLink size={14}/></a>}<div className="actions"><button className="ghost" onClick={()=>override(c)}>עריכה</button><button className="approve" disabled={c.status==='APPROVED'} onClick={()=>approve(c)}>{c.status==='APPROVED'?'אושר':'אישור'}</button></div></article>)}</div>{profile?.document?.knowledge_gaps?.length>0&&<section className="gaps"><div><p className="eyebrow">נדרש ממך</p><h2>פערי ידע להשלמה</h2></div>{profile.document.knowledge_gaps.map((g:any,i:number)=><Gap key={i} gap={g} brand={brand} flash={flash}/>)}</section>}</>
+export type Page = keyof typeof pages
+const pageNames = Object.keys(pages) as Page[]
+const readPage = (): {page: Page; selection?: string} => {
+  const [page, selection] = location.hash.slice(1).split('/')
+  return {page: pageNames.includes(page as Page) ? page as Page : 'onboarding', selection}
 }
-function Gap({gap,brand,flash}:any){const[answer,setAnswer]=useState('');const save=async()=>{await api(`/brands/${brand.id}/knowledge-gaps`,{method:'POST',body:JSON.stringify({question:gap.question,answer})});setAnswer('');flash('התשובה נשמרה כעובדה שאושרה על ידך')};return <div className="gap"><div><b>{gap.question}</b><small>{gap.reason}</small></div><input value={answer} onChange={e=>setAnswer(e.target.value)} placeholder="כתבו תשובה מדויקת…"/><button onClick={save} disabled={!answer}>שמירה</button></div>}
+export const navigate = (page: Page, selection?: string) => {
+  location.hash = selection ? `${page}/${selection}` : page
+}
 
-function Design({brand,design,setDesign,flash}:any){const d={...defaultDesign,...design};const colors={...defaultDesign.colors,...d.colors};const setColor=(k:string,v:string)=>setDesign({...d,colors:{...colors,[k]:v}});const save=async(status='draft')=>{const payload={colors,font_pairings:d.font_pairings,logo_safe_zones:d.logo_safe_zones,layout_templates:d.layout_templates||[],flux_style_prefix:d.flux_style_prefix,flux_constraints:d.flux_constraints};const saved=await api(`/brands/${brand.id}/design-system`,{method:'PUT',body:JSON.stringify(payload)});setDesign(saved);if(status==='approve'){setDesign(await api(`/brands/${brand.id}/design-system/approve`,{method:'POST',body:'{}'}));flash('מערכת העיצוב אושרה')}else flash('נשמרה גרסת טיוטה חדשה')};return <div className="studio"><section className="panel palette-panel"><div className="panel-title"><div><p className="eyebrow">60 · 30 · 10</p><h2>היררכיית צבע</h2></div><span>WCAG AA</span></div>{['primary','secondary','accent'].map((key,i)=><div className="color-row" key={key}><input type="color" value={colors[key]} onChange={e=>setColor(key,e.target.value.toUpperCase())}/><div><b>{['ראשי','משני','הדגשה'][i]}</b><code>{colors[key]}</code></div><div className="ratio">{ratio(colors[key],'#FFFFFF').toFixed(2)}:1 <small>{ratio(colors[key],'#FFFFFF')>=4.5?'תקין':'טקסט כהה'}</small></div></div>)}</section><section className="panel type-panel"><div className="panel-title"><div><p className="eyebrow">RTL + LTR</p><h2>זוג פונטים</h2></div></div><div className="font-selects"><select value={d.font_pairings?.hebrew_family||'Heebo'} onChange={e=>setDesign({...d,font_pairings:{...d.font_pairings,hebrew_family:e.target.value}})}>{fonts.slice(0,4).map(f=><option>{f}</option>)}</select><select value={d.font_pairings?.english_family||'Inter'} onChange={e=>setDesign({...d,font_pairings:{...d.font_pairings,english_family:e.target.value}})}>{fonts.map(f=><option>{f}</option>)}</select></div><div className="type-preview" style={{fontFamily:d.font_pairings?.hebrew_family}}><h3>רעיון טוב מתחיל בפרט אמיתי.</h3><p dir="ltr" style={{fontFamily:d.font_pairings?.english_family}}>Good brands feel unmistakably themselves.</p><small>גוף טקסט 16px · כותרת 40px · משקל 700</small></div></section><section className="panel logo-panel"><div className="panel-title"><div><p className="eyebrow">SAFE ZONE</p><h2>מרחב לוגו</h2></div></div><div className="logo-stage"><div className="safe"><span>LOGO</span></div></div><p>מרווח מינימלי של 1x מכל צד · רוחב דיגיטלי מינימלי 48px</p></section><section className="panel art-panel"><div className="panel-title"><div><p className="eyebrow">FLUX ART DIRECTION</p><h2>שפת צילום</h2></div></div><textarea value={d.flux_style_prefix||''} onChange={e=>setDesign({...d,flux_style_prefix:e.target.value})}/><div className="checks"><span>✓ ללא טקסט בתמונה</span><span>✓ שטח בטוח לכותרת</span><span>✓ תאורה עקבית</span></div></section><div className="studio-actions"><button className="ghost" onClick={()=>save()}>שמירת טיוטה</button><button className="primary" onClick={()=>save('approve')}><BadgeCheck/>אישור מערכת העיצוב</button></div></div>}
+export type ScreenProps = {
+  brand: Brand
+  base: string
+  capabilities?: Capabilities
+  selection?: string
+  notify: (text: string) => void
+}
 
-function Photo({brand,assets,setAssets,flash}:any){const[file,setFile]=useState<File>(),[asset,setAsset]=useState(''),[promptText,setPrompt]=useState(''),[mode,setMode]=useState('original_branded'),[platform,setPlatform]=useState('instagram');const upload=async()=>{if(!file)return;const data=new FormData();data.append('file',file);const row=await api<any>(`/brands/${brand.id}/assets?kind=product_photo`,{method:'POST',body:data});setAssets([row,...assets]);setAsset(row.id);flash('התמונה נשמרה בכספת המותג')};const create=async()=>{await api(`/brands/${brand.id}/on-demand-photo-briefs`,{method:'POST',body:JSON.stringify({source_asset_id:asset,prompt:promptText,treatment_mode:mode,platform})});flash('הבריף נוצר — פרופיל המותג לא השתנה')};return <div className="photo-flow"><section className="upload-card"><div className="upload-icon"><Upload/></div><h2>מה קורה עכשיו בעסק?</h2><p>העלו תמונה אמיתית ותנו משפט קצר. המערכת תשתמש בשפת המותג המאושרת בלי לשנות אותה.</p><input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={e=>setFile(e.target.files?.[0])}/><button className="ghost" onClick={upload} disabled={!file}>העלאה מאובטחת</button>{assets.length>0&&<select value={asset} onChange={e=>setAsset(e.target.value)}><option value="">בחרו תמונה</option>{assets.map((a:any)=><option key={a.id} value={a.id}>{a.kind} · {a.metadata?.width}×{a.metadata?.height}</option>)}</select>}</section><section className="brief-card"><label>מה נרצה לספר?</label><textarea value={promptText} onChange={e=>setPrompt(e.target.value)} placeholder="למשל: מנה חדשה שעלתה היום לתפריט הערב…"/><label>טיפול בתמונה</label><div className="modes">{modes.map(([id,title,desc])=><button key={id} className={mode===id?'chosen':''} onClick={()=>setMode(id)}><span>{id==='hero_cutout_scene'?<Sparkles/>:id==='smart_enhance'?<Workflow/>:<ImagePlus/>}</span><div><b>{title}</b><small>{desc}</small></div></button>)}</div><label>פלטפורמה</label><select value={platform} onChange={e=>setPlatform(e.target.value)}>{['instagram','tiktok','linkedin','facebook','youtube','x'].map(p=><option key={p}>{p}</option>)}</select><button className="primary wide" disabled={!asset||!promptText} onClick={create}>יצירת בריף לפוסט</button></section></div>}
+const screens = {
+  onboarding: Onboarding, identity: Identity, design: DesignStudio, strategy: StrategyStudio,
+  calendar: Calendar, photo: PhotoStudio, content: ContentStudio, publishing: Publishing,
+}
+
+const loadBrands = (signal: AbortSignal) => api<Brand[]>('/brands', signal)
+const loadCaps = (signal: AbortSignal) => api<Capabilities>('/workspace', signal)
+const jobNames: Record<string, string> = {
+  onboarding_research: 'מחקר מותג', content_generation: 'יצירת תוכן',
+  visual_render: 'הפקה חזותית', publish: 'מסירה לפרסום',
+}
+
+export default function App() {
+  const [route, setRoute] = useState(readPage)
+  const [brandId, setBrandId] = useState(() => localStorage.getItem('brandai.active'))
+  const [dialog, setDialog] = useState<'new' | 'jobs' | 'nav' | null>(null)
+  const [notice, setNotice] = useState('')
+  const brandList = useQuery(loadBrands)
+  const capabilities = useQuery(loadCaps)
+  useLocalFonts(capabilities.data?.fonts)
+  const brand = brandList.data?.find(row => row.id === brandId) ?? brandList.data?.[0]
+  const base = brand ? brandPath(brand.id) : ''
+  const loadJobs = useCallback((signal: AbortSignal) => base ? api<Job[]>(base + '/jobs', signal) : Promise.resolve([]), [base])
+  const jobs = useQuery(loadJobs, base ? 2500 : 0)
+  const activeJobs = jobs.data?.filter(job => ['RUNNING', 'QUEUED', 'RETRY_WAIT'].includes(job.status)) ?? []
+
+  useEffect(() => {
+    const handle = () => setRoute(readPage())
+    window.addEventListener('hashchange', handle)
+    return () => window.removeEventListener('hashchange', handle)
+  }, [])
+  useEffect(() => {
+    if (!notice) return
+    const timer = setTimeout(() => setNotice(''), 4200)
+    return () => clearTimeout(timer)
+  }, [notice])
+
+  function choose(id: string) {
+    localStorage.setItem('brandai.active', id)
+    setBrandId(id)
+    if (route.selection) navigate(route.page)
+  }
+
+  const page = pages[route.page]
+  const Screen = screens[route.page]
+
+  const navigation = <>
+    <div className="brand-logo"><span className="mark">BA</span><strong dir="ltr">BrandAI</strong></div>
+    <label className="switcher">מותג פעיל<select aria-label="מותג פעיל" value={brand?.id ?? ''} onChange={event => choose(event.target.value)}>
+      {!brand && <option value="">בחרו מותג</option>}
+      {brandList.data?.map(row => <option value={row.id} key={row.id}>{row.name}</option>)}
+    </select></label>
+    <button className="new-brand" onClick={() => setDialog('new')}><Plus size={17}/> מותג חדש</button>
+    <nav aria-label="סביבת עבודה">
+      {pageNames.map(key => {
+        const Icon = pages[key].icon
+        return <a href={'#' + key} key={key} aria-current={route.page === key ? 'page' : undefined}
+          onClick={() => setDialog(null)}><Icon size={17} aria-hidden/>{pages[key].title}</a>
+      })}
+    </nav>
+    <button className="jobs-link" onClick={() => setDialog('jobs')}>
+      <span className={activeJobs.length ? 'status-dot pulse' : 'status-dot'}/>
+      {jobs.error ? 'תור לא זמין' : activeJobs.length ? `${activeJobs.length} משימות פעילות` : 'עיבוד מקומי'}
+    </button>
+  </>
+
+  return <div className={`workspace ${capabilities.data?.fonts.includes('heebo') ? 'font-heebo' : ''} ${capabilities.data?.fonts.includes('inter') ? 'font-inter' : ''}`}>
+    <a className="skip" href="#main" onClick={event => {event.preventDefault(); document.getElementById('main')?.focus()}}>דילוג לתוכן</a>
+    <aside className="rail">{navigation}</aside>
+    <div className="mobile-bar"><button className="icon-button" aria-label="תפריט" onClick={() => setDialog('nav')}><Menu/></button>
+      <strong><bdi>{brand?.name ?? 'BrandAI'}</bdi></strong><button onClick={() => setDialog('jobs')}>משימות {activeJobs.length || ''}</button></div>
+    <main id="main" tabIndex={-1}>
+      <div className="page-frame" key={route.page + ':' + (brand?.id ?? '')}>
+        <header className="page-header"><div className="crumb"><bdi>{brand?.name ?? 'BrandAI'}</bdi><span>/</span>{page.title}</div>
+          <h1>{page.title}</h1><p>{page.note}</p></header>
+        <ErrorNote error={brandList.error ?? capabilities.error}/>
+        {brandList.loading ? <Busy/> : brand ? <Screen brand={brand} base={base} capabilities={capabilities.data}
+          selection={route.selection} notify={setNotice}/> :
+          <Empty title="עדיין אין מותגים" action={<button className="primary" onClick={() => setDialog('new')}>יצירת מותג ראשון</button>}>
+            לכל מותג יש פרופיל, קבצים ותוכנית תוכן משלו.
+          </Empty>}
+      </div>
+    </main>
+    <div className="live-toast" role="status">{notice && <span>✓ {notice}</span>}</div>
+    {dialog === 'nav' && <Dialog title="סביבת עבודה" drawer onClose={() => setDialog(null)}>{navigation}</Dialog>}
+    {dialog === 'new' && <NewBrand onClose={() => setDialog(null)} onCreate={row => {
+      brandList.setData([row, ...brandList.data ?? []])
+      choose(row.id)
+      navigate('onboarding')
+      setDialog(null)
+    }}/>}
+    {dialog === 'jobs' && <Dialog title="משימות ועיבוד מקומי" drawer onClose={() => setDialog(null)}>
+      <ErrorNote error={jobs.error}/>
+      {jobs.loading ? <Busy/> : jobs.data?.length ? <ul className="rows">{jobs.data.map(job => <li key={job.id}>
+        <div><b>{jobNames[job.kind] ?? job.kind}</b><small>ניסיון {job.attempts} · <bdi>{new Date(job.updated_at).toLocaleString('he-IL', {timeZone: 'Asia/Jerusalem'})}</bdi></small>
+          {job.error_code && <small dir="ltr">{job.error_code}</small>}</div><Status value={job.status}/>
+      </li>)}</ul> : <Empty title="אין משימות בתור"/>}
+    </Dialog>}
+  </div>
+}
+
+function NewBrand({onClose, onCreate}: {onClose: () => void; onCreate: (brand: Brand) => void}) {
+  const [name, setName] = useState('')
+  const action = useAction()
+  return <Dialog title="מותג חדש" onClose={onClose}>
+    <form className="stack" onSubmit={event => {
+      event.preventDefault()
+      void action.run(async () => onCreate(await write<Brand>('/brands', {name: name.trim()})))
+    }}>
+      <label>שם המותג<input autoFocus required maxLength={250} value={name} onChange={event => setName(event.target.value)}/></label>
+      <ErrorNote error={action.error}/>
+      <button className="primary" disabled={!name.trim() || action.pending}>יצירת מותג</button>
+    </form>
+  </Dialog>
+}

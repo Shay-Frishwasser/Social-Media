@@ -170,6 +170,26 @@ The [UX handoff specification](UX_HANDOFF_SPEC.md) maps eight Hebrew-first works
 
 The [Figma import guide](../design/figma/FIGMA_IMPORT_GUIDE.md) links to the editable Design board and explains how to use the [English-labeled RTL reference board](../design/figma/wireframes-overview.svg) and [DTCG design tokens](../design/figma/design-tokens.json). The wireframes are design artifacts for the next frontend milestone.
 
+## Local web workspace
+
+The React + Vite + TypeScript workspace uses the existing local FastAPI service for brand onboarding and review, visual design, strategy, cadence, photo briefs, content research and composition, and gated publishing. The production build is served by FastAPI. Vite proxies `/api` to loopback port 8000 during development. The app uses hash routes so browser reloads load the same screen from either server.
+
+Install Python 3.12 and a current Node.js LTS release. Set up the Python runtime and Playwright cache as shown below or in the Windows bootstrap. After that, use one command per platform.
+
+```sh
+"$HOME/brandai-runtime/.venv/bin/python" scripts/run_local.py
+```
+
+```powershell
+& 'C:\brandai-runtime\.venv\Scripts\python.exe' scripts/run_local.py
+```
+
+Open `http://127.0.0.1:8000`. Add `--dev` for Vite hot reload at `http://127.0.0.1:5173`. The launcher installs locked Node dependencies when absent and starts the existing brand-local queue worker alongside the API. The default uses deterministic content, image and segmentation providers and supports both manual intake and deterministic extraction of verbatim public-site excerpts for review. On a Windows workstation with the pinned Qwen and embedding assets installed, use `--provider local` to enable native text inference and automated public brand research. Local visuals use CPU-friendly providers. Use `--offline` to disable new onboarding and topic research requests in the workspace. Email and social delivery use existing optional adapter configuration. Account listings show redacted connection metadata. A complete provider OAuth login and callback still requires a separate integration.
+
+The workspace reads `GET /api/workspace` for local font and provider capabilities. `POST /profile/manual` creates a reviewable profile from owner-provided facts when automated extraction is unavailable. `GET /profile?allow_empty=true` and `GET /design-system?allow_empty=true` expose empty workspace state while retaining the default 404 behavior. `GET /assets/{asset_id}/preview` serves only verified, same-brand uploaded media. `GET /on-demand-photo-briefs` lists saved briefs. The content editor uses `POST /content/{content_id}/validate` to preview grounding and repetition findings without writing a revision. Saving repeats those checks. Content-linked PNG, PDF and ZIP downloads retain the hard publishing gate.
+
+Verify the web build with `npm ci --prefix web`, `cd web && npx tsc --noEmit`, and `npm run build --prefix web` from the repository root. To include the real loopback Chromium walkthrough, set `BRANDAI_WEB_E2E=1` and run `python -m pytest -q` from the installed Python environment with the Chromium and font configuration below. The walkthrough injects deterministic public-research fixtures and uses a disposable runtime.
+
 ## macOS backend verification
 
 Use Python 3.12 and a local runtime. The tests run against disposable brand stores with deterministic LLM, search, embedding, SMTP, social and EC2 worker doubles. To include the visual, publishing bundle and loopback browser tests, install Chromium in a runtime cache and leave `PLAYWRIGHT_BROWSERS_PATH` set while running pytest. For reproducible typography, install the pinned OFL files and licenses from `licenses/font-manifest.json` and set `BRANDAI_FONT_DIR` to that font directory.

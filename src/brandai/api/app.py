@@ -14,7 +14,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy import select, text
 
 from brandai import BrandAIStore, RuntimeSettings
@@ -24,7 +24,7 @@ from brandai.content.generator import ContentLLMProvider, MockDeterministicConte
 from brandai.content.models import ContentGenerationUnavailable
 from brandai.content.service import ContentService
 from brandai.db.base import utcnow
-from brandai.db.brand_models import Asset, BrandClaim, BrandDesignSystem, BrandProfile, Source
+from brandai.db.brand_models import Asset, BrandClaim, BrandDesignSystem, BrandProfile, OnDemandPhotoBrief, Source
 from brandai.db.global_models import Brand, Job
 from brandai.errors import BrandAIError, NotFoundError
 from brandai.jobs.aws import AWSEC2OnDemandGPUWorker, worker_from_env
@@ -32,6 +32,7 @@ from brandai.jobs.gpu_http import render_background, segment_photo
 from brandai.jobs.queue import JobHandler, JobQueue
 from brandai.onboarding.assets import MaterialIngestor
 from brandai.onboarding.embeddings import E5EmbeddingProvider, EmbeddingProvider
+from brandai.onboarding.safe_svg import static_svg
 from brandai.onboarding.search import DDGSSearchProvider, SearchProvider
 from brandai.publishing.connections import TokenRefresher, TokenVault
 from brandai.publishing.email import EmailDeliveryAdapter
@@ -52,8 +53,8 @@ from .operations import configure_delivery, configure_runner
 from .planning import planning_router
 from .publishing import publishing_router
 from .schemas import (BrandCreate, ClaimDecision, ClaimOverride, DesignSystemUpdate,
-                      KnowledgeGapAnswer, PhotoBriefCreate, ResearchRequest)
-from .services import local_llm_worker
+                      KnowledgeGapAnswer, ManualProfileRequest, PhotoBriefCreate, ResearchRequest)
+from .services import local_llm_worker, local_onboarding_enabled
 from .topic_research import topic_router
 from .visual_assets import visual_router
 
@@ -124,8 +125,10 @@ def create_app(
     @app.post("/api/brands/{brand_id}/research", status_code=202)
     def trigger_research(brand_id: UUID, payload: ResearchRequest, background: BackgroundTasks):
         identifier = str(brand_id)
-        data = payload.model_dump(mode="json")
-        digest = sha256(payload.model_dump_json().encode()).hexdigest()
+        excluded = {"social_handles"} if not payload.social_handles else None
+        data = payload.model_dump(mode="json", exclude=excluded)
+        digest_payload = payload.model_dump_json(exclude=excluded)
+        digest = sha256(digest_payload.encode()).hexdigest()
         job = queue.enqueue(identifier, "onboarding_research", f"legacy-research:{digest}", data)
         with store.GlobalSession.begin() as session:
             session.execute(text("BEGIN IMMEDIATE"))
@@ -192,17 +195,40 @@ def create_app(
             row = VersionRepository(session).append_profile(status="APPROVED", document=latest.document, created_by=payload.approved_by)
             return {"id": row.id, "version": row.version, "status": row.status}
 
+    @app.post("/api/brands/{brand_id}/profile/manual", status_code=201)
+    def create_manual_profile(brand_id: UUID, payload: ManualProfileRequest):
+        with store.brand_session(str(brand_id), immediate=True) as session:
+            latest = session.scalar(select(BrandProfile).order_by(BrandProfile.version.desc()).limit(1))
+            if latest and latest.status != "DRAFT":
+                raise HTTPException(409, "the brand already has a profile in review")
+            actor = "local-owner"
+            versions = VersionRepository(session)
+            if latest is None:
+                versions.append_profile(status="DRAFT", document={}, created_by=actor)
+            claims = ClaimRepository(session)
+            rows = [claims.add(field_key=key, value=value, origin="inferred", confidence=1,
+                               user_override=True, approved_by=actor)
+                    for key, value in payload.model_dump().items()]
+            document = {"claims": [{"claim_id": row.id, "field_key": row.field_key} for row in rows],
+                        "knowledge_gaps": [], "conflicts": [], "requires_human_approval": True}
+            result = versions.append_profile(status="PENDING_REVIEW", document=document, created_by=actor)
+            return {"id": result.id, "version": result.version, "status": result.status, "document": result.document}
+
     @app.get("/api/brands/{brand_id}/profile")
-    def get_profile(brand_id: str):
+    def get_profile(brand_id: str, allow_empty: bool = False):
         with store.brand_session(brand_id) as session:
             row = session.scalar(select(BrandProfile).order_by(BrandProfile.version.desc()).limit(1))
+            if not row and allow_empty:
+                return None
             if not row: raise HTTPException(404, "profile not found")
             return {"id": row.id, "version": row.version, "status": row.status, "document": row.document}
 
     @app.get("/api/brands/{brand_id}/design-system")
-    def get_design_system(brand_id: str):
+    def get_design_system(brand_id: str, allow_empty: bool = False):
         with store.brand_session(brand_id) as session:
             row = session.scalar(select(BrandDesignSystem).order_by(BrandDesignSystem.version.desc()).limit(1))
+            if not row and allow_empty:
+                return None
             if not row: raise HTTPException(404, "design system not found")
             return _design_dict(row)
 
@@ -243,7 +269,7 @@ def create_app(
                     size += len(chunk)
                     if size > 25 * 1024 * 1024: raise HTTPException(413, "asset exceeds 25 MiB")
                     output.write(chunk)
-            with store.brand_session(identifier) as session:
+            with store.brand_session(identifier, immediate=True) as session:
                 embeddings = E5EmbeddingProvider(
                     settings.directory("BRANDAI_EMBEDDINGS_DIR", "models/embeddings/multilingual-e5-base"))
                 root = settings.brand_assets_dir(identifier).resolve()
@@ -252,7 +278,7 @@ def create_app(
                 try:
                     row = MaterialIngestor(session, root, embeddings).ingest_asset(temp_path, kind=kind)
                 except (ValueError, OSError) as exc:
-                    raise HTTPException(422, "unsupported or invalid image asset") from exc
+                    raise HTTPException(422, str(exc) if isinstance(exc, ValueError) else "invalid image asset") from exc
                 return {"id": row.id, "kind": row.kind, "path": row.path, "metadata": row.metadata_json}
         finally:
             temp_path.unlink(missing_ok=True)
@@ -263,6 +289,32 @@ def create_app(
             return [{"id": row.id, "kind": row.kind, "path": row.path, "metadata": row.metadata_json}
                     for row in session.scalars(select(Asset).order_by(Asset.created_at.desc()))]
 
+    @app.get("/api/brands/{brand_id}/assets/{asset_id}/preview")
+    def uploaded_asset_preview(brand_id: UUID, asset_id: UUID):
+        root = settings.brand_assets_dir(str(brand_id))
+        with store.brand_session(str(brand_id)) as session:
+            row = session.get(Asset, str(asset_id))
+            if row is None:
+                raise HTTPException(404, "asset not found")
+            path = Path(row.path).resolve()
+            media_type = row.metadata_json.get("media_type")
+            if (root != root.resolve() or not path.is_relative_to(root)
+                    or not path.is_file() or path.stat().st_size > 25 * 1024 * 1024
+                    or media_type not in {"image/png", "image/jpeg", "image/webp", "image/svg+xml"}):
+                raise HTTPException(404, "uploaded image is unavailable")
+            data = path.read_bytes()
+            if not row.sha256 or sha256(data).hexdigest() != row.sha256:
+                raise HTTPException(409, "uploaded image failed integrity verification")
+            if media_type == "image/svg+xml":
+                try:
+                    data, *_ = static_svg(data)
+                except ValueError:
+                    raise HTTPException(422, "unsupported SVG image") from None
+            return Response(data, media_type=media_type, headers={
+                "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox",
+                "Cache-Control": "no-store",
+            })
+
     font_files = {"heebo": "heebo/Heebo.ttf", "assistant": "assistant/Assistant.ttf",
                   "rubik": "rubik/Rubik.ttf", "noto-sans-hebrew": "notosanshebrew/NotoSansHebrew.ttf",
                   "inter": "inter/Inter.ttf"}
@@ -271,7 +323,18 @@ def create_app(
     def font_file(font_key: str):
         relative = font_files.get(font_key)
         if not relative: raise HTTPException(404, "font not found")
-        return FileResponse(settings.directory("BRANDAI_FONT_DIR", "fonts") / relative, media_type="font/ttf")
+        path = settings.directory("BRANDAI_FONT_DIR", "fonts") / relative
+        if not path.is_file():
+            raise HTTPException(404, "font not installed")
+        return FileResponse(path, media_type="font/ttf")
+
+    @app.get("/api/brands/{brand_id}/on-demand-photo-briefs")
+    def list_photo_briefs(brand_id: UUID):
+        with store.brand_session(str(brand_id)) as session:
+            rows = session.scalars(select(OnDemandPhotoBrief).order_by(OnDemandPhotoBrief.created_at.desc()))
+            return [{"id": row.id, "status": row.status, "treatment_mode": row.treatment_mode,
+                     "platform": row.platform, "source_asset_id": row.source_asset_id, "prompt": row.prompt}
+                    for row in rows]
 
     @app.post("/api/brands/{brand_id}/on-demand-photo-briefs", status_code=201)
     def create_photo_brief(brand_id: str, payload: PhotoBriefCreate):
@@ -325,6 +388,16 @@ def create_app(
     app.state.queue, app.state.job_runner, app.state.aws_worker = queue, runner, aws_worker
     app.include_router(publishing_router(delivery, delivery.connections))
     app.include_router(jobs_router(queue, runner, queue_only=queue_only))
+
+    @app.get("/api/workspace")
+    def workspace_capabilities():
+        font_dir = settings.directory("BRANDAI_FONT_DIR", "fonts")
+        return {"fonts": [key for key, path in font_files.items() if (font_dir / path).is_file()],
+                "onboarding_research": local_onboarding_enabled() or queue_only or "onboarding_research" in (job_handlers or {}),
+                "topic_research": topic_service.enabled,
+                "email": delivery.email is not None, "social": sorted(delivery.publishers),
+                "provider": provider_mode}
+
     web_dist = Path(__file__).resolve().parents[3] / "web" / "dist"
     if web_dist.exists(): app.mount("/", StaticFiles(directory=web_dist, html=True), name="web")
     return app

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+import numpy as np
 from sqlalchemy.orm import Session
 
 from brandai.repositories import SourceRepository
@@ -38,23 +39,47 @@ class IngestionResult:
     chunk_ids: list[str]
 
 
+@dataclass(slots=True)
+class PreparedEvidence:
+    kind: str
+    url: str | None
+    title: str | None
+    content: str
+    media_type: str
+    metadata: dict | None
+    chunks: list[str]
+    vectors: np.ndarray | list
+
+
 class EvidenceIngestor:
     def __init__(self, session: Session, embeddings: EmbeddingProvider):
         self.repo = SourceRepository(session)
         self.embeddings = embeddings
 
+    def prepare_page(self, page: CrawledPage) -> PreparedEvidence:
+        return self.prepare_text(kind="website", text=page.text, url=page.url, title=page.title,
+                                 raw_content=page.raw_html, media_type="text/html",
+                                 metadata={"rendered": page.rendered, "status_code": page.status_code})
+
     def ingest_page(self, page: CrawledPage) -> IngestionResult:
-        return self.ingest_text(kind="website", text=page.text, url=page.url, title=page.title,
-                                raw_content=page.raw_html, media_type="text/html",
-                                metadata={"rendered": page.rendered, "status_code": page.status_code})
+        return self.save(self.prepare_page(page))
+
+    def prepare_text(self, *, kind: str, text: str, url: str | None = None, title: str | None = None,
+                     raw_content: str | None = None, media_type: str = "text/plain",
+                     metadata: dict | None = None) -> PreparedEvidence:
+        chunks = chunk_text(text)
+        vectors = self.embeddings.embed_passages(chunks) if chunks else []
+        return PreparedEvidence(kind, url, title, raw_content or text, media_type, metadata, chunks, vectors)
 
     def ingest_text(self, *, kind: str, text: str, url: str | None = None, title: str | None = None,
                     raw_content: str | None = None, media_type: str = "text/plain",
                     metadata: dict | None = None) -> IngestionResult:
-        source = self.repo.add_source(kind=kind, url=url, title=title, content=raw_content or text,
-                                      media_type=media_type, metadata=metadata)
-        chunks = chunk_text(text)
-        vectors = self.embeddings.embed_passages(chunks) if chunks else []
-        rows = [self.repo.add_chunk(source.id, i, chunk, vectors[i], self.embeddings.model_name)
-                for i, chunk in enumerate(chunks)]
+        return self.save(self.prepare_text(kind=kind, text=text, url=url, title=title, raw_content=raw_content,
+                                           media_type=media_type, metadata=metadata))
+
+    def save(self, value: PreparedEvidence) -> IngestionResult:
+        source = self.repo.add_source(kind=value.kind, url=value.url, title=value.title, content=value.content,
+                                      media_type=value.media_type, metadata=value.metadata)
+        rows = [self.repo.add_chunk(source.id, i, chunk, value.vectors[i], self.embeddings.model_name)
+                for i, chunk in enumerate(value.chunks)]
         return IngestionResult(source.id, [row.id for row in rows])

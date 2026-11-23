@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response
 
-from brandai.content.models import ContentApproval, ContentGenerate, ContentPatch, ContentResponse, ContentStatus, ContentSummary
+from brandai.content.models import ContentApproval, ContentGenerate, ContentPatch, ContentResponse, ContentStatus, ContentSummary, ValidationReport
 from brandai.content.service import ContentService
 from brandai.errors import GenerationBlockedError
 from brandai.strategy.models import Platform
@@ -43,6 +43,10 @@ def content_router(service: ContentService, *, queue_only: bool = False) -> APIR
     @router.get("/{content_id}")
     def get_item(brand_id: UUID, content_id: UUID) -> ContentResponse:
         return service.get_content(str(brand_id), str(content_id))
+
+    @router.post("/{content_id}/validate")
+    def validate_item_draft(brand_id: UUID, content_id: UUID, payload: ContentPatch) -> ValidationReport:
+        return service.validate_draft(str(brand_id), str(content_id), payload)
 
     @router.patch("/{content_id}")
     def edit_item(brand_id: UUID, content_id: UUID, payload: ContentPatch) -> ContentResponse:

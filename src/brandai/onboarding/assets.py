@@ -5,7 +5,10 @@ import shutil
 from pathlib import Path
 
 from PIL import Image
+from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+from brandai.db.brand_models import Asset
 
 from brandai.repositories import AssetRepository, SourceRepository
 from .embeddings import EmbeddingProvider
@@ -37,6 +40,13 @@ class MaterialIngestor:
         metadata = self._validate(source_path)
         digest = hashlib.sha256(source_path.read_bytes()).hexdigest()
         destination = self.assets_dir / f"{digest[:16]}{source_path.suffix.lower()}"
+        existing = self.session.scalar(select(Asset).where(Asset.path == str(destination)))
+        if existing is not None:
+            if existing.sha256 != digest or existing.kind != kind:
+                raise ValueError("this image is already stored under a different asset type")
+            if destination.is_file() and hashlib.sha256(destination.read_bytes()).hexdigest() == digest:
+                return existing
+            raise ValueError("the existing upload failed integrity verification")
         if not destination.exists(): shutil.copy2(source_path, destination)
         asset = AssetRepository(self.session, self.assets_dir).add(destination, kind=kind, metadata=metadata)
         SourceRepository(self.session).add_source(

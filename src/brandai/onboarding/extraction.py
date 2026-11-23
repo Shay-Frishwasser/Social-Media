@@ -74,7 +74,7 @@ class GroundedBrandExtractor:
                                     .order_by(SourceChunk.source_id, SourceChunk.ordinal)).all()
         if not rows: raise ValueError("cannot extract a brand without evidence chunks")
         evidence = [{"source_id": source.id, "chunk_id": chunk.id, "title": source.title,
-                     "url": source.url, "text": chunk.text} for chunk, source in rows]
+                     "url": source.url, "kind": source.kind, "text": chunk.text} for chunk, source in rows]
         evidence = evidence[:self.max_evidence_chunks]
         payload = self.llm.complete_json(system=SYSTEM_PROMPT,
             user="EVIDENCE:\n" + json.dumps(evidence, ensure_ascii=False), schema=EXTRACTION_SCHEMA)

@@ -13,9 +13,15 @@ JobKind = Literal["onboarding_research", "content_generation", "visual_render", 
 JobStatus = Literal["QUEUED", "RUNNING", "RETRY_WAIT", "SUCCEEDED", "DEAD_LETTER"]
 
 
+SocialHandles = Annotated[list[Annotated[str, StringConstraints(pattern=r"^@[A-Za-z0-9_.-]{1,64}$")]], Field(max_length=6)]
+
+
 class OnboardingPayload(Model):
     website_url: HttpUrl
     company_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=250)]
+
+
+    social_handles: SocialHandles = Field(default_factory=list)
 
 
 class ContentPayload(ContentGenerate):

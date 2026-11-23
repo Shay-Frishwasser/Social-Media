@@ -8,12 +8,13 @@ from sqlalchemy import select
 
 from brandai import BrandAIStore, RuntimeSettings
 from brandai.adapters.workers import GPUWorkerProvider
+from brandai.content.diversity import HashEmbeddingProvider
 from brandai.db.brand_models import BrandProfile
 from brandai.jobs.models import OnboardingPayload, PermanentJobError
 from brandai.jobs.queue import ClaimedJob
 from brandai.onboarding.embeddings import E5EmbeddingProvider
 from brandai.onboarding.gpu import LocalLlamaGPUWorker, SingleGPUController
-from brandai.onboarding.llm import LlamaCppProvider
+from brandai.onboarding.llm import DeterministicEvidenceProvider, LlamaCppProvider
 from brandai.onboarding.pipeline import BrandResearchPipeline
 from brandai.onboarding.search import DDGSSearchProvider
 from brandai.research.network import PublicTopicCrawler, public_url
@@ -28,6 +29,11 @@ def local_llm_worker(settings: RuntimeSettings) -> LocalLlamaGPUWorker:
     return LocalLlamaGPUWorker(controller)
 
 
+def local_onboarding_enabled() -> bool:
+    mode = os.getenv("BRANDAI_AUTOMATED_ONBOARDING", "1")
+    return mode == "deterministic" or (mode == "1" and os.name == "nt")
+
+
 def execute_onboarding(
     store: BrandAIStore, job: ClaimedJob, progress: Callable[[int], None], worker: GPUWorkerProvider | None,
 ) -> dict:
@@ -36,8 +42,9 @@ def execute_onboarding(
         source_url = public_url(str(payload.website_url))
     except ValueError:
         raise PermanentJobError("onboarding_source_requires_public_https") from None
-    if worker is None:
-        if os.name != "nt":
+    extract_locally = worker is None and os.getenv("BRANDAI_AUTOMATED_ONBOARDING") == "deterministic"
+    if worker is None and not extract_locally:
+        if not local_onboarding_enabled():
             raise PermanentJobError("onboarding_worker_unconfigured")
         worker = local_llm_worker(store.settings)
     progress(20)
@@ -54,11 +61,18 @@ def execute_onboarding(
             raise PermanentJobError("onboarding_requires_draft_profile")
         pipeline = BrandResearchPipeline(
             session, crawler=PublicTopicCrawler(), search=DDGSSearchProvider(),
-            embeddings=E5EmbeddingProvider(store.settings.directory(
+            embeddings=HashEmbeddingProvider() if extract_locally else E5EmbeddingProvider(store.settings.directory(
                 "BRANDAI_EMBEDDINGS_DIR", "models/embeddings/multilingual-e5-base")),
         )
-        research = asyncio.run(pipeline.research(source_url, payload.company_name))
-        with worker.lease("llm") as lease:
-            outcome = pipeline.extract(research, LlamaCppProvider(lease.base_url), created_by=job.id)
+        research = asyncio.run(pipeline.research(
+            source_url, payload.company_name, social_handles=payload.social_handles,
+            on_pages=lambda: progress(45), on_embeddings=lambda: progress(75),
+        ))
+        if extract_locally:
+            outcome = pipeline.extract(research, DeterministicEvidenceProvider(source_url), created_by=job.id)
+        else:
+            assert worker is not None
+            with worker.lease("llm") as lease:
+                outcome = pipeline.extract(research, LlamaCppProvider(lease.base_url), created_by=job.id)
     progress(95)
     return {"profile_id": outcome.profile_id}

@@ -1,3 +1,42 @@
-export type Brand={id:string;name:string;status:string};
-export type Claim={id:string;field_key:string;value:unknown;origin:'observed'|'inferred';confidence:number;status:string;quoted_span?:string;source?:{title?:string;url?:string};is_user_override:boolean};
-export async function api<T>(path:string,init?:RequestInit):Promise<T>{const response=await fetch('/api'+path,{...init,headers:{...(init?.body instanceof FormData?{}:{'Content-Type':'application/json'}),...init?.headers}});if(!response.ok)throw new Error((await response.json().catch(()=>({detail:response.statusText}))).detail);return response.json()}
+export class ApiError extends Error {
+  constructor(public status: number, public payload: unknown, message: string) {
+    super(message)
+  }
+}
+
+export const apiUrl = (path: string) => '/api' + path
+export const brandPath = (id: string) => '/brands/' + encodeURIComponent(id)
+
+async function request(path: string, init?: RequestInit) {
+  const response = await fetch(apiUrl(path), init)
+  if (response.ok) return response
+  const payload = await response.json().catch(() => null)
+  const detail = payload?.detail
+  const issues = payload?.issues
+  const message = typeof detail === 'string' ? detail
+    : Array.isArray(detail) ? detail.map(row => row.msg).join(' · ')
+    : Array.isArray(issues) ? issues.map(row => row.message).join(' · ')
+    : `הבקשה נכשלה (${response.status})`
+  throw new ApiError(response.status, payload, message)
+}
+
+export async function api<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return (await request(path, {signal})).json()
+}
+
+export async function write<T>(path: string, data: object = {}, method = 'POST', signal?: AbortSignal): Promise<T> {
+  const init = data instanceof FormData ? {method, body: data}
+    : {method, body: JSON.stringify(data), headers: {'Content-Type': 'application/json'}}
+  return (await request(path, {...init, signal})).json()
+}
+
+export async function file(path: string): Promise<Blob> {
+  return (await request(path)).blob()
+}
+
+export function saveFile(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = Object.assign(document.createElement('a'), {href: url, download: name})
+  anchor.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}

@@ -179,19 +179,36 @@ class ContentService:
             research_topic_id=topic_id, research_content_id=row.id,
         )
 
+    def _pending_patch(
+        self, repo: ContentRepository, row: ContentItem, payload: ContentPatch,
+    ) -> tuple[str | None, PreparedContent, DraftCopy, VisualSelection]:
+        latest = self._editable_head(repo, row, str(payload.revision_id))
+        topic_id = latest.research_json.get("research_topic_id")
+        if "research_topic_id" in payload.model_fields_set:
+            topic_id = str(payload.research_topic_id) if payload.research_topic_id else None
+        prepared = self._current_context(repo, row, topic_id)
+        copy_fields = payload.model_dump(exclude_unset=True,
+                                         exclude={"revision_id", "edited_by", "visual_directive", "research_topic_id"})
+        copy = DraftCopy.model_validate({**revision_copy(latest).model_dump(), **copy_fields})
+        selection = payload.visual_directive or VisualSelection.model_validate(latest.visual_directive["selection"])
+        return topic_id, prepared, copy, selection
+
+    def validate_draft(self, brand_id: str, content_id: str, payload: ContentPatch) -> ValidationReport:
+        with self.store.brand_session(brand_id) as session:
+            session.execute(text("BEGIN"))
+            repo = ContentRepository(session, brand_id)
+            row = repo.get(content_id)
+            _, prepared, copy, selection = self._pending_patch(repo, row, payload)
+            evaluation = self._evaluate(copy, selection, prepared)
+            self._check_diversity(repo, copy, evaluation, omit_id=row.id)
+            return ValidationReport(valid=not evaluation.violations, violations=evaluation.violations,
+                                    attempts=[], event_note_used=evaluation.event_used)
+
     def patch(self, brand_id: str, content_id: str, payload: ContentPatch) -> ContentResponse:
         with self.store.brand_session(brand_id) as session:
             repo = ContentRepository(session, brand_id)
             row = repo.get(content_id)
-            latest = self._editable_head(repo, row, str(payload.revision_id))
-            topic_id = latest.research_json.get("research_topic_id")
-            if "research_topic_id" in payload.model_fields_set:
-                topic_id = str(payload.research_topic_id) if payload.research_topic_id else None
-            prepared = self._current_context(repo, row, topic_id)
-            copy_fields = payload.model_dump(exclude_unset=True,
-                                             exclude={"revision_id", "edited_by", "visual_directive", "research_topic_id"})
-            copy = DraftCopy.model_validate({**revision_copy(latest).model_dump(), **copy_fields})
-            selection = payload.visual_directive or VisualSelection.model_validate(latest.visual_directive["selection"])
+            topic_id, prepared, copy, selection = self._pending_patch(repo, row, payload)
         evaluation = self._evaluate(copy, selection, prepared)
         with self.store.brand_session(brand_id, immediate=True) as session:
             repo = ContentRepository(session, brand_id)
