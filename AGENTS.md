@@ -14,11 +14,11 @@ This file is binding context for Codex and other coding agents working in this r
 ## Repository/runtime split
 
 - Source lives in this Git repository. The current Windows checkout may be inside OneDrive.
-- Heavy or mutable state lives under `C:\brandai-runtime` by default, configurable with `BRANDAI_RUNTIME_ROOT`.
+- Heavy or mutable state defaults to `C:\brandai-runtime` on Windows and `~/brandai-runtime` on macOS. Set `BRANDAI_RUNTIME_ROOT` to use a different local directory.
 - Never place `.venv`, model weights, Hugging Face/Torch/Playwright caches, generated media, or SQLite files in the repository.
-- Global DB: `C:\brandai-runtime\system.db`.
-- Brand DB: `C:\brandai-runtime\brands\<brand-uuid>\brand.db`.
-- Brand assets: `C:\brandai-runtime\brands\<brand-uuid>\assets`.
+- Global DB is `<runtime-root>/system.db`.
+- Brand DB is `<runtime-root>/brands/<brand-uuid>/brand.db`.
+- Brand assets are in `<runtime-root>/brands/<brand-uuid>/assets`.
 
 ## Approved local AI stack
 
@@ -26,7 +26,7 @@ This file is binding context for Codex and other coding agents working in this r
 - Embeddings: `intfloat/multilingual-e5-base` on CPU with mandatory `passage:` and `query:` prefixes.
 - Images: `FLUX.2 Klein 4B`, isolated Diffusers subprocess.
 - Typography/composition: Playwright Chromium with Heebo, Assistant, Rubik, Noto Sans Hebrew, and Inter (OFL).
-- Foreground segmentation: adapter exists for BiRefNet, but the checkpoint stays disabled until commercial training-dataset provenance is formally accepted. Do not bypass this guard.
+- Foreground segmentation for `hero_cutout_scene` uses the Meta SAM 2.1 adapter contract for the Apache-2.0 tiny or small checkpoints. Provision an explicit worker runner and pinned checkpoint before executing it. BiRefNet stays disabled pending commercial training-dataset provenance sign-off.
 - GPU work must go through `GPUWorkerProvider`/`SingleGPUController`, verify free VRAM with `nvidia-smi`, and verify cleanup after process termination.
 
 ## Storage and security rules
@@ -49,6 +49,8 @@ cd web; npm install; npm run build
 
 Run Alembic through `BrandAIStore`; global and per-brand migration histories are independent. Tests must use `tmp_path` runtime roots and must not leave production brand rows.
 
+On macOS, use Python 3.12 and keep the virtual environment and Playwright cache under the runtime root. The default pytest suite uses deterministic LLM, embedding and segmentation worker doubles. Run the optional Chromium smoke case with `PLAYWRIGHT_BROWSERS_PATH` pointing to a locally installed Playwright Chromium cache. It uses loopback only.
+
 ## Current milestone state
 
-Milestones 0–4 are implemented. Read `docs/PROJECT_STATE.md` before changing architecture or milestone boundaries. Do not start Milestone 5 without explicit approval.
+Milestones 0–5 are implemented. Milestone 5 is backend-only. Strategy requires the latest approved profile and design system plus effective approved claims. Cadence requires an approved strategy, records planned slots in the brand DB, uses Asia/Jerusalem wall times, and reserves dates and times only on approval. Strategy and cadence edits create draft revisions. Playbook v1 files are seeded into the runtime and each strategy and cadence snapshot records the exact playbook hash and brand override version. Read `docs/PROJECT_STATE.md` for schemas, routes and runtime setup. Do not start Milestone 6 without explicit approval.

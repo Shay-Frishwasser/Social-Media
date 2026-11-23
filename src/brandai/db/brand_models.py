@@ -191,3 +191,35 @@ class OnDemandPhotoBrief(BrandBase):
     transient_overrides: Mapped[dict] = mapped_column(json_type(), default=dict)
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PlatformRuleOverride(BrandBase):
+    __tablename__ = "platform_rule_overrides"
+    __table_args__ = (UniqueConstraint("platform", "version"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    platform: Mapped[str] = mapped_column(String(30), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    document: Mapped[dict] = mapped_column(json_type(), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PlannedContentSlot(BrandBase):
+    __tablename__ = "planned_content_slots"
+    __table_args__ = (
+        UniqueConstraint("cadence_plan_id", "scheduled_at_utc"),
+        UniqueConstraint("cadence_plan_id", "photo_brief_id"),
+        CheckConstraint(
+            "(photo_brief_id IS NULL AND pillar_id IS NOT NULL AND depth IS NOT NULL AND claim_id IS NOT NULL) OR "
+            "(photo_brief_id IS NOT NULL AND pillar_id IS NULL AND depth IS NULL AND claim_id IS NULL)",
+            name="cadence_or_photo",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    cadence_plan_id: Mapped[str] = mapped_column(ForeignKey("cadence_plans.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(30))
+    scheduled_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=False), index=True)
+    pillar_id: Mapped[str | None] = mapped_column(String(50))
+    claim_id: Mapped[str | None] = mapped_column(ForeignKey("brand_claims.id"))
+    depth: Mapped[str | None] = mapped_column(String(30))
+    photo_brief_id: Mapped[str | None] = mapped_column(ForeignKey("on_demand_photo_briefs.id"))

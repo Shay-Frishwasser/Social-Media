@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import pytest
 
 from brandai.onboarding.crawler import WebsiteCrawler
 from brandai.onboarding.search import FallbackSearchProvider, SearchResult
@@ -62,9 +66,13 @@ def test_search_degrades_and_falls_back():
     assert asyncio.run(FallbackSearchProvider([BrokenSearch()]).search("Acme")) == []
 
 
-def test_real_playwright_renders_local_js(monkeypatch):
+def test_real_playwright_renders_local_js(tmp_path, monkeypatch):
     from brandai.onboarding.crawler import PlaywrightRenderer
-    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", r"C:\brandai-runtime\cache\playwright")
+
+    browser_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if not browser_path or not list(Path(browser_path).glob("chromium_headless_shell-*")):
+        pytest.skip("Chromium headless shell is missing from PLAYWRIGHT_BROWSERS_PATH")
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
     server = ThreadingHTTPServer(("127.0.0.1", 0), SiteHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
     try:

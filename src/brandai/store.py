@@ -4,9 +4,10 @@ import hashlib
 import json
 from contextlib import contextmanager
 from pathlib import Path
+from threading import Lock
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from .config import RuntimeSettings
 from .db.engine import create_sqlite_engine, session_factory
@@ -22,6 +23,8 @@ class BrandAIStore:
         upgrade_global(settings.system_db)
         self.global_engine = create_sqlite_engine(settings.system_db)
         self.GlobalSession = session_factory(self.global_engine)
+        self._migrated_brands: set[str] = set()
+        self._brand_migration_lock = Lock()
 
     def create_brand(self, name: str, brand_id: str | None = None) -> Brand:
         brand_id = brand_id or str(uuid4())
@@ -34,6 +37,8 @@ class BrandAIStore:
         with self.GlobalSession.begin() as session:
             row = Brand(id=brand_id, name=name, db_path=str(db_path.resolve()), assets_path=str(assets_dir.resolve()))
             session.add(row)
+        with self._brand_migration_lock:
+            self._migrated_brands.add(brand_id)
         return row
 
     def brand_engine(self, brand_id: str):
@@ -46,21 +51,39 @@ class BrandAIStore:
         actual = Path(row.db_path).resolve()
         if actual != expected or not actual.is_relative_to(self.settings.brands_dir.resolve()):
             raise BrandIsolationError("registry database path violates brand boundary")
+        with self._brand_migration_lock:
+            if brand_id not in self._migrated_brands:
+                upgrade_brand(actual)
+                self._migrated_brands.add(brand_id)
         return create_sqlite_engine(actual)
 
     @contextmanager
-    def brand_session(self, brand_id: str):
-        factory = session_factory(self.brand_engine(brand_id))
-        with factory.begin() as session:
-            yield session
+    def brand_session(self, brand_id: str, *, immediate: bool = False):
+        engine = self.brand_engine(brand_id)
+        try:
+            with session_factory(engine).begin() as session:
+                if immediate:
+                    session.execute(text("BEGIN IMMEDIATE"))
+                yield session
+        finally:
+            engine.dispose()
 
-    def register_playbook(self, path: Path) -> PlatformPlaybook:
-        content = json.loads(path.read_text(encoding="utf-8"))
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    def register_playbook(self, path: Path, *, expected: tuple[str, int] | None = None) -> PlatformPlaybook:
+        payload = path.read_bytes()
+        content = json.loads(payload)
+        if expected and (content["platform"], content["version"]) != expected:
+            raise ValueError("playbook does not match the requested platform and version")
+        digest = hashlib.sha256(payload).hexdigest()
+        criteria = (PlatformPlaybook.platform == content["platform"], PlatformPlaybook.version == content["version"])
+        with self.GlobalSession() as session:
+            row = session.scalar(select(PlatformPlaybook).where(*criteria))
+            if row:
+                if row.sha256 != digest:
+                    raise ValueError("a playbook version is immutable; increment its version")
+                return row
         with self.GlobalSession.begin() as session:
-            row = session.scalar(select(PlatformPlaybook).where(
-                PlatformPlaybook.platform == content["platform"],
-                PlatformPlaybook.version == content["version"]))
+            session.execute(text("BEGIN IMMEDIATE"))
+            row = session.scalar(select(PlatformPlaybook).where(*criteria))
             if row:
                 if row.sha256 != digest:
                     raise ValueError("a playbook version is immutable; increment its version")

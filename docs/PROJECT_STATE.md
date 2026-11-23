@@ -1,4 +1,4 @@
-# BrandAI project state — 2026-11-22
+# BrandAI project state — 2026-11-23
 
 ## Product and architecture
 
@@ -6,9 +6,11 @@ BrandAI is a local-AI, web-based Social Media and Brand Manager supporting Insta
 
 The React UI and FastAPI API are stateless application layers over:
 
-- `C:\brandai-runtime\system.db`: users, brand registry, jobs, global reminders, versioned platform playbooks.
-- `C:\brandai-runtime\brands\<uuid>\brand.db`: sources/chunks, claims, immutable profile/design versions, assets, strategies, cadence, content revisions, post memory, delivery records, feedback, and on-demand photo briefs.
-- `C:\brandai-runtime\brands\<uuid>\assets`: brand-contained uploads and media.
+- `<runtime-root>/system.db` holds users, the brand registry, jobs, global reminders, and versioned platform playbooks.
+- `<runtime-root>/brands/<uuid>/brand.db` holds sources, claims, brand versions, strategies, cadence, content revisions, feedback, and photo briefs.
+- `<runtime-root>/brands/<uuid>/assets` holds brand-contained uploads and media.
+
+`BRANDAI_RUNTIME_ROOT` defaults to `C:\brandai-runtime` on Windows and `~/brandai-runtime` on macOS. Keep databases, virtual environments, browser caches, model weights, and generated media outside the checkout. Git carries source, migrations and playbook templates between machines. Each checkout uses its own local runtime root.
 
 SQLite uses WAL, foreign keys, FTS5 trigram indexing, float32 embedding BLOBs, and NumPy cosine similarity. Profiles, design systems, and content-package revisions have database triggers preventing update/delete.
 
@@ -20,6 +22,7 @@ SQLite uses WAL, foreign keys, FTS5 trigram indexing, float32 embedding BLOBs, a
 | Embeddings | intfloat/multilingual-e5-base, CPU | MIT; pinned |
 | Image generation | FLUX.2 Klein 4B, Diffusers subprocess | Apache-2.0; pinned |
 | Fonts | Heebo, Assistant, Rubik, Noto Sans Hebrew, Inter | OFL 1.1; hashes in `licenses/font-manifest.json` |
+| Primary foreground segmentation | Meta SAM 2.1 Hiera tiny or small | Apache-2.0 checkpoints. Worker adapter configured. Pin and provision the runner and checkpoint before hardware use. [Meta SAM 2 license](https://github.com/facebookresearch/sam2#license) |
 | Cutout candidate | ZhengPeng7/BiRefNet | Code/model card MIT, but upstream training-dataset provenance has commercial ambiguity; adapter disabled pending sign-off |
 
 ## Completed milestones
@@ -47,6 +50,52 @@ Robots-aware/rate-limited httpx + Trafilatura crawler, conditional Playwright re
 - Agency visual system: role-based 60/30/10 palette, WCAG contrast calculations, bilingual typography hierarchy, logo geometry, photographic direction, feed-cohesion rules, and text-free FLUX constraints.
 - `SocialPublisher`, `PackageDelivery`, `GPUWorkerProvider`, and foreground-segmentation boundaries.
 - On-demand modes: `original_branded`, `smart_enhance`, `hero_cutout_scene`. Briefs never mutate the brand profile.
+
+### Milestone 5 — strategy, cadence and platform rules
+
+- `brandai.strategy` uses a deterministic `StrategyPlanner` that can be injected into the API factory. The planner chooses approved claim IDs. The generator validates the selection, renders bilingual editorial hooks and angles, and maps three to five pillars to approved visual templates, color roles and FLUX.2 style constraints. It uses the latest approved profile and design system, effective approved claims, and verbatim evidence for observations. Audience pain points and desires come from approved audience fields when present.
+- `strategies` holds versioned strategy documents with the profile and design IDs, effective evidence, register and Hebrew address tags, and per-channel pillar weights. LinkedIn defaults to a local 3:2:1 editorial mix for value, community and product. The approved strategy's selected platforms define the active channels for cadence. Approval records the human reviewer and rechecks provenance.
+- `platform_rule_overrides` holds brand-local revisions for posting frequency, preferred days and times, excluded topics, pillar weights, depth mix, account type and link policy. A playbook is seeded from repository `playbooks/<platform>/v1.json` when its runtime copy is missing. Strategy and cadence snapshots keep the base version, exact SHA-256, effective rules and brand override revision. Set `BRANDAI_PLAYBOOK_SOURCE` if running from an install outside the source checkout.
+- `cadence_plans` holds versioned weekly and monthly plan documents, and `planned_content_slots` holds time, platform, pillar, approved claim and depth for each scheduled item. Weeks start on Monday and months start on the first. Times are selected in Asia/Jerusalem and stored as UTC. Skipped daylight-saving times are unavailable and repeated wall times use their earlier instant. Monthly plans apportion partial weeks using their eligible weekdays.
+- Approval reserves date ranges by channel and publishing instants across the brand. Draft plans can explore the same period. Updating a plan creates a draft revision, and approving the revision supersedes the previous approved plan in the same transaction. On-demand slots refer to a same-brand photo brief and preserve scheduled cadence counts. A standalone brief uses the existing on-demand flow without a calendar reservation. Calendar approval and photo brief status are independent.
+- Brand migrations run on first access through `BrandAIStore`. Milestone 5 adds the two planning tables using brand migration `0004_strategy_cadence`. Existing planning rows are readable as legacy documents and can be revised into the structured format before approval.
+
+#### Backend API
+
+All paths below are relative to `/api/brands/{brand_id}`. OpenAPI serves request and response schemas at `/docs`.
+
+| Method and path | Purpose |
+|---|---|
+| `GET /strategies` and `GET /strategies/{strategy_id}` | List versions and inspect a strategy |
+| `POST /strategies` | Generate a draft for selected platforms |
+| `PUT /strategies/{strategy_id}` | Create a draft revision with selected evidence, tone tags or pillar weights |
+| `POST /strategies/{strategy_id}/approve` | Approve a strategy version |
+| `GET /cadence-plans` and `GET /cadence-plans/{plan_id}` | List versions and inspect a plan with its slots |
+| `POST /cadence-plans` | Plan a week or month with optional per-channel overrides |
+| `PUT /cadence-plans/{plan_id}` | Create a revised draft and carry its on-demand slots forward |
+| `POST /cadence-plans/{plan_id}/on-demand-slots` | Add an existing photo brief at an offset-aware timestamp in a new draft |
+| `POST /cadence-plans/{plan_id}/approve` | Approve a plan and reserve its slots |
+| `GET /playbooks/{platform}` and `PUT /playbooks/{platform}` | Inspect effective rules and replace the brand override with a new version |
+
+For cadence, Monday is weekday 0 and Sunday is weekday 6. Local times use `HH:MM`. Omitted plan-level override fields inherit the brand rules. Pillar weights use plan overrides first, strategy overrides second, and then brand rules and platform defaults. The six supported depth labels are `micro`, `standard`, `deep_dive`, `educational_framework`, `story`, and `carousel`.
+
+#### SAM 2.1 worker configuration
+
+`hero_cutout_scene` selects SAM 2.1 via `ForegroundSegmentationProvider.cutout(source, destination)`. Set `BRANDAI_SAM2_VARIANT` to `sam2.1_hiera_tiny` (default) or `sam2.1_hiera_small`. `BRANDAI_SAM2_DIR` defaults to `<runtime-root>/models/segmentation/sam2`. The adapter leases `foreground_segmentation` through `GPUWorkerProvider` and passes the resolved checkpoint and model config to an injected runner. The runner supplies the subject prompt, creates the RGBA result, and preserves source RGB pixels with mask edits confined to alpha. Milestone 5 exercises the contract with a stub. BiRefNet remains disabled.
+
+## macOS backend verification
+
+Use Python 3.12 and a local runtime. The tests run against disposable brand stores with deterministic LLM, embedding and GPU worker doubles. To include the loopback browser smoke test, install Chromium in a runtime cache and leave `PLAYWRIGHT_BROWSERS_PATH` set while running pytest.
+
+```sh
+export BRANDAI_RUNTIME_ROOT="$HOME/brandai-runtime"
+uv venv --python 3.12 "$BRANDAI_RUNTIME_ROOT/.venv"
+uv pip install --python "$BRANDAI_RUNTIME_ROOT/.venv/bin/python" -e '.[dev]'
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export PLAYWRIGHT_BROWSERS_PATH="$BRANDAI_RUNTIME_ROOT/cache/playwright"
+"$BRANDAI_RUNTIME_ROOT/.venv/bin/python" -m playwright install chromium
+"$BRANDAI_RUNTIME_ROOT/.venv/bin/python" -m pytest -q
+```
 
 ## Second Windows workstation bootstrap
 

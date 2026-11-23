@@ -1,5 +1,5 @@
 {
-  "verified_at": "2026-11-22",
+  "verified_at": "2026-11-23",
   "policy": "Model weights must be Apache-2.0 or MIT. Model revisions are pinned before download.",
   "selected": [
     {
@@ -34,6 +34,14 @@
         "text_encoder": "Qwen3ForCausalLM",
         "vae": "AutoencoderKLFlux2"
       }
+    },
+    {
+      "role": "foreground_segmentation",
+      "repo": "facebookresearch/sam2",
+      "license": "Apache-2.0",
+      "artifacts": ["sam2.1_hiera_tiny.pt", "sam2.1_hiera_small.pt"],
+      "license_source": "https://github.com/facebookresearch/sam2#license",
+      "status": "worker adapter configured; pin checkpoint and runner revisions during provisioning"
     }
   ],
   "excluded": [

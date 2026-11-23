@@ -19,6 +19,8 @@ from brandai.errors import BrandAIError
 from brandai.onboarding.assets import MaterialIngestor
 from brandai.onboarding.embeddings import E5EmbeddingProvider
 from brandai.repositories import ClaimRepository, GlobalRepository, OnDemandPhotoRepository, VersionRepository
+from brandai.strategy.generator import DeterministicStrategyPlanner, StrategyPlanner
+from .planning import planning_router
 from .schemas import (BrandCreate, ClaimDecision, ClaimOverride, DesignSystemUpdate,
                       KnowledgeGapAnswer, PhotoBriefCreate, ResearchRequest)
 from .services import run_onboarding_job
@@ -31,10 +33,13 @@ def _design_dict(row: BrandDesignSystem) -> dict:
             "flux_constraints": row.flux_constraints, "created_at": row.created_at}
 
 
-def create_app(settings: RuntimeSettings | None = None, *, run_background_jobs: bool = True) -> FastAPI:
+def create_app(
+    settings: RuntimeSettings | None = None, *, run_background_jobs: bool = True,
+    strategy_planner: StrategyPlanner | None = None,
+) -> FastAPI:
     settings = settings or RuntimeSettings.from_env()
     store = BrandAIStore(settings)
-    app = FastAPI(title="BrandAI Local", version="0.4.0")
+    app = FastAPI(title="BrandAI Local", version="0.5.0")
     app.state.store = store
     app.state.run_background_jobs = run_background_jobs
     app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -168,7 +173,8 @@ def create_app(settings: RuntimeSettings | None = None, *, run_background_jobs: 
                     if size > 25 * 1024 * 1024: raise HTTPException(413, "asset exceeds 25 MiB")
                     output.write(chunk)
             with store.brand_session(brand_id) as session:
-                embeddings = E5EmbeddingProvider(settings.root / "models/embeddings/multilingual-e5-base")
+                embeddings = E5EmbeddingProvider(
+                    settings.directory("BRANDAI_EMBEDDINGS_DIR", "models/embeddings/multilingual-e5-base"))
                 row = MaterialIngestor(session, settings.brand_assets_dir(brand_id), embeddings).ingest_asset(temp_path, kind=kind)
                 return {"id": row.id, "kind": row.kind, "path": row.path, "metadata": row.metadata_json}
         finally:
@@ -188,7 +194,7 @@ def create_app(settings: RuntimeSettings | None = None, *, run_background_jobs: 
     def font_file(font_key: str):
         relative = font_files.get(font_key)
         if not relative: raise HTTPException(404, "font not found")
-        return FileResponse(settings.root / "fonts" / relative, media_type="font/ttf")
+        return FileResponse(settings.directory("BRANDAI_FONT_DIR", "fonts") / relative, media_type="font/ttf")
 
     @app.post("/api/brands/{brand_id}/on-demand-photo-briefs", status_code=201)
     def create_photo_brief(brand_id: str, payload: PhotoBriefCreate):
@@ -197,6 +203,7 @@ def create_app(settings: RuntimeSettings | None = None, *, run_background_jobs: 
             return {"id": row.id, "status": row.status, "treatment_mode": row.treatment_mode,
                     "platform": row.platform, "source_asset_id": row.source_asset_id}
 
+    app.include_router(planning_router(store, strategy_planner or DeterministicStrategyPlanner()))
     web_dist = Path(__file__).resolve().parents[3] / "web" / "dist"
     if web_dist.exists(): app.mount("/", StaticFiles(directory=web_dist, html=True), name="web")
     return app

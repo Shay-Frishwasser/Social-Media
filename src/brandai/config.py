@@ -17,7 +17,9 @@ class RuntimeSettings:
             load_dotenv(env_file)
         else:
             load_dotenv()
-        return cls(root=Path(os.getenv("BRANDAI_RUNTIME_ROOT", r"C:\brandai-runtime")).resolve())
+        default = Path(r"C:\brandai-runtime") if os.name == "nt" else Path.home() / "brandai-runtime"
+        root = os.environ.get("BRANDAI_RUNTIME_ROOT") or default
+        return cls(root=Path(root).expanduser().resolve())
 
     @property
     def system_db(self) -> Path:
@@ -30,6 +32,10 @@ class RuntimeSettings:
     @property
     def playbooks_dir(self) -> Path:
         return self.root / "playbooks"
+
+    def directory(self, variable: str, relative_default: str) -> Path:
+        configured = os.environ.get(variable)
+        return Path(configured).expanduser().resolve() if configured else self.root / relative_default
 
     def brand_dir(self, brand_id: str) -> Path:
         return self.brands_dir / brand_id

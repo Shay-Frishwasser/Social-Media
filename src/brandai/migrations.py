@@ -8,8 +8,9 @@ from alembic.config import Config
 
 def _upgrade(db_path: Path, tree: str) -> None:
     config = Config()
-    config.set_main_option("script_location", str(Path(__file__).parent / "alembic" / tree))
-    config.set_main_option("sqlalchemy.url", f"sqlite+pysqlite:///{db_path.resolve().as_posix()}")
+    config.set_main_option("script_location", str(Path(__file__).parent / "alembic" / tree).replace("%", "%%"))
+    url = f"sqlite+pysqlite:///{db_path.resolve().as_posix()}"
+    config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
     command.upgrade(config, "head")
 
 

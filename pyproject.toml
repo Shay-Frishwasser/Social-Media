@@ -11,7 +11,7 @@ dependencies = [
   "alembic>=1.17,<2",
   "beautifulsoup4>=4.13,<5",
   "ddgs>=9,<10",
-  "fastapi>=0.120,<1",
+  "fastapi>=0.121,<1",
   "httpx>=0.28,<1",
   "numpy>=2.0,<3",
   "pillow>=12,<14",
@@ -23,6 +23,7 @@ dependencies = [
   "sentence-transformers>=5,<7",
   "SQLAlchemy>=2.0,<3",
   "trafilatura>=2.0,<3",
+  "tzdata>=2025.2; sys_platform == 'win32'",
   "uvicorn>=0.38,<1",
 ]
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from .adapters.segmentation import PRIMARY_SEGMENTATION_PROVIDER
+
 
 PhotoMode = Literal["original_branded", "smart_enhance", "hero_cutout_scene"]
 
@@ -36,5 +38,6 @@ class PhotoTreatmentPlanner:
                 ("validate_source", "segment_foreground", "preserve_foreground_rgba", "generate_text_free_brand_scene",
                  "composite_untouched_foreground", "place_logo_in_safe_zone", "render_typography"),
                 frozenset({"foreground_segmentation", "image_generation"}),
-                {**common, "foreground_policy": "source RGB pixels remain unchanged; only alpha edge refinement is allowed"})
+                {**common, "segmentation_provider": PRIMARY_SEGMENTATION_PROVIDER,
+                 "foreground_policy": "source RGB pixels remain unchanged; only alpha edge refinement is allowed"})
         raise ValueError(f"unsupported photo treatment mode: {mode}")

@@ -99,15 +99,17 @@ class ClaimRepository:
 
     def effective(self, field_key: str) -> BrandClaim | None:
         claims = list(self.session.scalars(select(BrandClaim).where(BrandClaim.field_key == field_key)))
-        def rank(c: BrandClaim) -> tuple[int, float, str]:
-            if c.is_user_override and c.status == "APPROVED": tier = 5
-            elif c.origin == "observed" and c.status == "APPROVED": tier = 4
-            elif c.origin == "observed": tier = 3
-            elif c.origin == "inferred" and c.status == "APPROVED": tier = 2
-            else: tier = 1
-            return tier, c.confidence, c.created_at.isoformat()
         eligible = [c for c in claims if c.status not in {"REJECTED", "SUPERSEDED"}]
-        return max(eligible, key=rank) if eligible else None
+        return max(eligible, key=self.rank) if eligible else None
+
+    @staticmethod
+    def rank(c: BrandClaim) -> tuple[int, float, str, str]:
+        if c.is_user_override and c.status == "APPROVED": tier = 5
+        elif c.origin == "observed" and c.status == "APPROVED": tier = 4
+        elif c.origin == "observed": tier = 3
+        elif c.origin == "inferred" and c.status == "APPROVED": tier = 2
+        else: tier = 1
+        return tier, c.confidence, c.created_at.isoformat(), c.id
 
 
 class VersionRepository:
@@ -131,13 +133,14 @@ class VersionRepository:
             previous_id=previous.id if previous else None, created_by=created_by)
         self.session.add(row); self.session.flush(); return row
 
-    def assert_generation_ready(self) -> None:
+    def assert_generation_ready(self) -> tuple[BrandProfile, BrandDesignSystem]:
         profile = self.session.scalar(select(BrandProfile).order_by(BrandProfile.version.desc()).limit(1))
         design = self.session.scalar(select(BrandDesignSystem).order_by(BrandDesignSystem.version.desc()).limit(1))
         if not profile or profile.status != ProfileStatus.APPROVED:
             raise GenerationBlockedError("latest brand profile is not approved")
         if not design or design.status != "APPROVED":
             raise GenerationBlockedError("latest brand design system is not approved")
+        return profile, design
 
 
 class AssetRepository:

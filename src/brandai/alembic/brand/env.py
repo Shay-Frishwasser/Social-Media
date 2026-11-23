@@ -14,8 +14,12 @@ def run_migrations_online():
     engine = engine_from_config(config.get_section(config.config_ini_section) or {}, prefix="sqlalchemy.", poolclass=pool.NullPool)
     with engine.connect() as connection:
         connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+        connection.exec_driver_sql("PRAGMA busy_timeout=5000")
         connection.commit()
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
         context.configure(connection=connection, target_metadata=target_metadata)
-        with context.begin_transaction(): context.run_migrations()
+        with context.begin_transaction():
+            context.run_migrations()
+        connection.commit()
 
 run_migrations_offline() if context.is_offline_mode() else run_migrations_online()

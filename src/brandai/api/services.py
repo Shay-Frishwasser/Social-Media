@@ -20,11 +20,12 @@ def run_onboarding_job(store: BrandAIStore, job_id: str, brand_id: str, website_
         job = session.get(Job, job_id); job.status = "RUNNING"
     settings = store.settings
     try:
-        embeddings = E5EmbeddingProvider(settings.root / "models/embeddings/multilingual-e5-base")
+        embeddings = E5EmbeddingProvider(
+            settings.directory("BRANDAI_EMBEDDINGS_DIR", "models/embeddings/multilingual-e5-base"))
         controller = SingleGPUController(
-            server_exe=settings.root / "tools/llama.cpp-b12633/llama-server.exe",
-            model=settings.root / "models/llm/qwen3.5-9b-q8/Qwen_Qwen3.5-9B-Q8_0.gguf",
-            log_dir=settings.root / "logs")
+            server_exe=settings.directory("BRANDAI_LLAMACPP_DIR", "tools/llama.cpp-b12633") / "llama-server.exe",
+            model=settings.directory("BRANDAI_LLM_DIR", "models/llm") / "qwen3.5-9b-q8/Qwen_Qwen3.5-9B-Q8_0.gguf",
+            log_dir=settings.directory("BRANDAI_LOG_DIR", "logs"))
         worker = LocalLlamaGPUWorker(controller)
         with store.brand_session(brand_id) as session:
             pipeline = BrandResearchPipeline(session,
