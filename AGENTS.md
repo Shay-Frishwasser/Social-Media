@@ -58,3 +58,5 @@ On macOS, use Python 3.12 and keep the virtual environment, approved OFL fonts a
 ## Current milestone state
 
 Milestones 0–8 are implemented. Brand-local jobs use leased execution, safe retry and dead-letter states. Publishing requires the exact current approved content and render at export, schedule and execution time. AWS mode uses a dedicated queue process for privately leased GPU jobs. Read `docs/PROJECT_STATE.md` and `deploy/aws/DEPLOYMENT.md` for schemas, routes and runtime setup. Keep subsequent milestone work subject to explicit approval.
+
+The [UX handoff specification](docs/UX_HANDOFF_SPEC.md) documents the Hebrew-first workspace, including current backend gates and interactions that need future endpoints. Use the [Figma import guide](design/figma/FIGMA_IMPORT_GUIDE.md) for the English-labeled RTL wireframes, design tokens and editable Figma board.

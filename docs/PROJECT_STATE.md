@@ -164,6 +164,12 @@ Paths are relative to `/api/brands/{brand_id}`.
 
 Use `kind=onboarding_research` with `website_url` and `company_name`, `kind=content_generation` with a `slot_id` or `brief_id`, or `kind=visual_render` with a content item, brief, or `previous_id` for a re-render. The payload carries the same generation or render options as the synchronous routes. Use a stable `idempotency_key` for each job or delivery. Scheduled social delivery uses the local Jerusalem offset on the supplied calendar date.
 
+## UX and Figma handoff
+
+The [UX handoff specification](UX_HANDOFF_SPEC.md) maps eight Hebrew-first workspace flows to the completed backend. It covers approval and publishing gates, Hebrew production microcopy, RTL behavior, responsive layouts and proposed interactions that require additional API support.
+
+The [Figma import guide](../design/figma/FIGMA_IMPORT_GUIDE.md) links to the editable Design board and explains how to use the [English-labeled RTL reference board](../design/figma/wireframes-overview.svg) and [DTCG design tokens](../design/figma/design-tokens.json). The wireframes are design artifacts for the next frontend milestone.
+
 ## macOS backend verification
 
 Use Python 3.12 and a local runtime. The tests run against disposable brand stores with deterministic LLM, search, embedding, SMTP, social and EC2 worker doubles. To include the visual, publishing bundle and loopback browser tests, install Chromium in a runtime cache and leave `PLAYWRIGHT_BROWSERS_PATH` set while running pytest. For reproducible typography, install the pinned OFL files and licenses from `licenses/font-manifest.json` and set `BRANDAI_FONT_DIR` to that font directory.
