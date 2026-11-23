@@ -10,6 +10,15 @@ from . import global_models as _global_models  # noqa: F401
 IMMUTABLE_TABLES = ("brand_profiles", "brand_design_systems", "content_package_revisions")
 
 
+def protect_revision_table(connection: Connection, table: str) -> None:
+    for operation in ("UPDATE", "DELETE"):
+        name = f"immutable_{table}_{operation.lower()}"
+        connection.execute(text(
+            f"CREATE TRIGGER IF NOT EXISTS {name} BEFORE {operation} ON {table} "
+            f"BEGIN SELECT RAISE(ABORT, '{table} is immutable'); END"
+        ))
+
+
 def create_global_schema(engine: Engine) -> None:
     GlobalBase.metadata.create_all(engine)
 
@@ -36,12 +45,7 @@ def create_brand_schema(bind: Engine | Connection) -> None:
             "INSERT INTO source_chunks_fts(rowid, text) VALUES (new.rowid, new.text); END"
         )
         for table in IMMUTABLE_TABLES:
-            for operation in ("UPDATE", "DELETE"):
-                name = f"immutable_{table}_{operation.lower()}"
-                connection.execute(text(
-                    f"CREATE TRIGGER IF NOT EXISTS {name} BEFORE {operation} ON {table} "
-                    f"BEGIN SELECT RAISE(ABORT, '{table} is immutable'); END"
-                ))
+            protect_revision_table(connection, table)
     if isinstance(bind, Engine):
         with bind.begin() as connection:
             configure(connection)

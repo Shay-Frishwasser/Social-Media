@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9,<10"]
+dev = ["httpx2>=2.16,<3", "pytest>=9,<10"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

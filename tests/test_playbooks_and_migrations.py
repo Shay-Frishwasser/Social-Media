@@ -23,6 +23,6 @@ def test_brand_migration_reaches_source_payload_head(store, two_brands):
     try:
         assert {column["name"] for column in inspect(engine).get_columns("sources")} >= {"raw_content", "media_type"}
         with engine.connect() as connection:
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0004_strategy_cadence"
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0005_content_pipeline"
     finally:
         engine.dispose()

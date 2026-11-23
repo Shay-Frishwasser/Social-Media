@@ -148,7 +148,7 @@ def _topic_key(text: str) -> str:
     return " ".join(re.findall(r"[^\W_]+", text.casefold()))
 
 
-def _allowed_claims(strategy: StrategyDocument, excluded_topics: list[str]) -> dict[str, list[str]]:
+def allowed_claims(strategy: StrategyDocument, excluded_topics: list[str]) -> dict[str, list[str]]:
     evidence = {claim.id: claim for claim in strategy.claims}
     excluded = [key for topic in excluded_topics if (key := _topic_key(topic))]
     by_pillar: dict[str, list[str]] = {}
@@ -166,7 +166,7 @@ def generate_slots(document: CadenceDocument, strategy: StrategyDocument, busy: 
     slots = []
     for platform, times in scheduled.items():
         playbook = document.playbooks[platform]
-        allowed = _allowed_claims(strategy, playbook.overrides.excluded_topics)
+        allowed = allowed_claims(strategy, playbook.overrides.excluded_topics)
         weights = {key: weight for key, weight in document.pillar_weights[platform].items()
                    if key in allowed and weight}
         if times and not weights:

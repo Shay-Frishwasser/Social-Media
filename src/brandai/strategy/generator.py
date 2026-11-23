@@ -147,7 +147,7 @@ def effective_weights(
     return weights
 
 
-def _evidence_text(claim: ClaimEvidence) -> str:
+def evidence_text(claim: ClaimEvidence) -> str:
     if claim.origin == "observed" and claim.quoted_span:
         return claim.quoted_span
     if isinstance(claim.value, str):
@@ -219,7 +219,7 @@ def build_strategy(
             audience_context=audience, art_direction=_art_direction(design, template),
         ))
         for claim_id in selection.claim_ids:
-            fact = _evidence_text(evidence[claim_id])
+            fact = evidence_text(evidence[claim_id])
             english_hook, hebrew_hook = HOOKS.get(selection.id, HOOKS["education"])
             hook = f"{hebrew_hook} ״{fact}״" if re.search(r"[\u0590-\u05ff]", fact) else f"{english_hook} “{fact}”"
             angles.append(MessagingAngle(

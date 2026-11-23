@@ -42,6 +42,8 @@ def test_existing_brand_is_migrated_on_first_access(store):
     engine = store.brand_engine(brand.id)
     try:
         with engine.begin() as connection:
+            connection.execute(text("DROP TABLE content_revisions"))
+            connection.execute(text("DROP TABLE content_items"))
             connection.execute(text("DROP TABLE planned_content_slots"))
             connection.execute(text("DROP TABLE platform_rule_overrides"))
             connection.execute(text("UPDATE alembic_version SET version_num = '0003_on_demand_photo_briefs'"))
@@ -49,7 +51,9 @@ def test_existing_brand_is_migrated_on_first_access(store):
         engine.dispose()
     reopened = BrandAIStore(store.settings)
     with reopened.brand_session(brand.id) as session:
-        assert set(inspect(session.connection()).get_table_names()) >= {"planned_content_slots", "platform_rule_overrides"}
+        assert set(inspect(session.connection()).get_table_names()) >= {
+            "planned_content_slots", "platform_rule_overrides", "content_items", "content_revisions",
+        }
         assert session.get(Strategy, legacy.id).document == {"topic": "Historical strategy"}
 
 

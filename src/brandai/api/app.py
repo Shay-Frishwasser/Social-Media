@@ -8,22 +8,27 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import select
 
 from brandai import BrandAIStore, RuntimeSettings
+from brandai.content.diversity import DiversitySettings, HashEmbeddingProvider
+from brandai.content.generator import ContentLLMProvider, MockDeterministicContentProvider, QwenContentProvider
+from brandai.content.models import ContentGenerationUnavailable
+from brandai.content.service import ContentService
 from brandai.db.brand_models import Asset, BrandClaim, BrandDesignSystem, BrandProfile, Source
 from brandai.db.global_models import Brand, Job
 from brandai.enums import PhotoTreatmentMode
-from brandai.errors import BrandAIError
+from brandai.errors import BrandAIError, NotFoundError
 from brandai.onboarding.assets import MaterialIngestor
-from brandai.onboarding.embeddings import E5EmbeddingProvider
+from brandai.onboarding.embeddings import E5EmbeddingProvider, EmbeddingProvider
 from brandai.repositories import ClaimRepository, GlobalRepository, OnDemandPhotoRepository, VersionRepository
 from brandai.strategy.generator import DeterministicStrategyPlanner, StrategyPlanner
+from .content import content_router
 from .planning import planning_router
 from .schemas import (BrandCreate, ClaimDecision, ClaimOverride, DesignSystemUpdate,
                       KnowledgeGapAnswer, PhotoBriefCreate, ResearchRequest)
-from .services import run_onboarding_job
+from .services import local_llm_worker, run_onboarding_job
 
 
 def _design_dict(row: BrandDesignSystem) -> dict:
@@ -36,10 +41,12 @@ def _design_dict(row: BrandDesignSystem) -> dict:
 def create_app(
     settings: RuntimeSettings | None = None, *, run_background_jobs: bool = True,
     strategy_planner: StrategyPlanner | None = None,
+    content_provider: ContentLLMProvider | None = None, content_embeddings: EmbeddingProvider | None = None,
+    content_diversity: DiversitySettings | None = None,
 ) -> FastAPI:
     settings = settings or RuntimeSettings.from_env()
     store = BrandAIStore(settings)
-    app = FastAPI(title="BrandAI Local", version="0.5.0")
+    app = FastAPI(title="BrandAI Local", version="0.6.0")
     app.state.store = store
     app.state.run_background_jobs = run_background_jobs
     app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -47,8 +54,11 @@ def create_app(
 
     @app.exception_handler(BrandAIError)
     async def domain_error(_request, exc):
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=409, content={"detail": str(exc)})
+        return JSONResponse(status_code=404 if isinstance(exc, NotFoundError) else 409, content={"detail": str(exc)})
+
+    @app.exception_handler(ContentGenerationUnavailable)
+    async def provider_error(_request, exc):
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
 
     @app.get("/api/health")
     def health(): return {"status": "ok", "runtime": str(settings.root)}
@@ -204,6 +214,22 @@ def create_app(
                     "platform": row.platform, "source_asset_id": row.source_asset_id}
 
     app.include_router(planning_router(store, strategy_planner or DeterministicStrategyPlanner()))
+    if content_provider is None:
+        provider_mode = os.getenv("BRANDAI_CONTENT_PROVIDER", "mock")
+        if provider_mode == "local" and os.name == "nt":
+            content_provider = QwenContentProvider(local_llm_worker(settings))
+        elif provider_mode == "mock":
+            content_provider = MockDeterministicContentProvider()
+        else:
+            raise ValueError("BRANDAI_CONTENT_PROVIDER must be mock or local (Windows only)")
+    if content_embeddings is None:
+        content_embeddings = (
+            E5EmbeddingProvider(settings.directory("BRANDAI_EMBEDDINGS_DIR", "models/embeddings/multilingual-e5-base"))
+            if isinstance(content_provider, QwenContentProvider) else HashEmbeddingProvider()
+        )
+    content_service = ContentService(store, content_provider, content_embeddings, content_diversity or DiversitySettings())
+    app.state.content_service = content_service
+    app.include_router(content_router(content_service))
     web_dist = Path(__file__).resolve().parents[3] / "web" / "dist"
     if web_dist.exists(): app.mount("/", StaticFiles(directory=web_dist, html=True), name="web")
     return app

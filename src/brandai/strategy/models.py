@@ -24,6 +24,7 @@ class Model(BaseModel):
 
 
 class PlatformOverrides(Model):
+    content_link_placement: Literal["forbidden", "body"] | None = None
     posts_per_week: int | None = Field(default=None, ge=1, le=42)
     weekdays: list[Weekday] | None = Field(default=None, min_length=1, max_length=7)
     local_times: list[time] | None = Field(default=None, min_length=1, max_length=12)

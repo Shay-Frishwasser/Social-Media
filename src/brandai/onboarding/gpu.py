@@ -5,11 +5,15 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 
 import httpx
 import psutil
 
 from brandai.adapters.workers import WorkerLease
+
+
+_LOCAL_LLM_LEASE = Lock()
 
 
 def gpu_snapshot() -> dict:
@@ -110,5 +114,5 @@ class LocalLlamaGPUWorker:
     @contextmanager
     def lease(self, capability: str):
         if capability != "llm": raise ValueError(f"local llama worker does not provide {capability}")
-        with self.controller.llama_server() as (base_url, _metrics):
+        with _LOCAL_LLM_LEASE, self.controller.llama_server() as (base_url, _metrics):
             yield WorkerLease(base_url=base_url, worker_id="local-rtx4060ti", capabilities=frozenset({"llm"}))

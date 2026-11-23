@@ -12,7 +12,7 @@ The React UI and FastAPI API are stateless application layers over:
 
 `BRANDAI_RUNTIME_ROOT` defaults to `C:\brandai-runtime` on Windows and `~/brandai-runtime` on macOS. Keep databases, virtual environments, browser caches, model weights, and generated media outside the checkout. Git carries source, migrations and playbook templates between machines. Each checkout uses its own local runtime root.
 
-SQLite uses WAL, foreign keys, FTS5 trigram indexing, float32 embedding BLOBs, and NumPy cosine similarity. Profiles, design systems, and content-package revisions have database triggers preventing update/delete.
+SQLite uses WAL, foreign keys, FTS5 trigram indexing, float32 embedding BLOBs, and NumPy cosine similarity. Profiles, design systems, content-package revisions, and content revisions have database immutability triggers.
 
 ## Models and licenses
 
@@ -83,6 +83,34 @@ For cadence, Monday is weekday 0 and Sunday is weekday 6. Local times use `HH:MM
 
 `hero_cutout_scene` selects SAM 2.1 via `ForegroundSegmentationProvider.cutout(source, destination)`. Set `BRANDAI_SAM2_VARIANT` to `sam2.1_hiera_tiny` (default) or `sam2.1_hiera_small`. `BRANDAI_SAM2_DIR` defaults to `<runtime-root>/models/segmentation/sam2`. The adapter leases `foreground_segmentation` through `GPUWorkerProvider` and passes the resolved checkpoint and model config to an injected runner. The runner supplies the subject prompt, creates the RGBA result, and preserves source RGB pixels with mask edits confined to alpha. Milestone 5 exercises the contract with a stub. BiRefNet remains disabled.
 
+### Milestone 6 — grounded content, validation and diversity
+
+- Brand migration `0005_content_pipeline` adds `content_items` and `content_revisions`. An item links the brand, strategy, platform, content depth, pinned playbook version and rules, and either a cadence slot or a standalone photo brief. A calendar photo also retains the brief ID. Revisions store hook, body, CTA, hashtags, evidence IDs, Hebrew register and gender checks, the visual directive, attempt reports and a model-tagged float32 embedding when copy passes grounding and format checks.
+- A slot needs an active approved cadence plan and its approved strategy. A standalone brief requires its target platform in the latest approved strategy and uses the effective playbook when generation begins. A brief already on an approved calendar uses that slot and the calendar's pinned rules. Generation is idempotent per slot or standalone brief. A replacement calendar has new slot IDs and can generate content while preserving the earlier revisions for audit.
+- The CPU validator treats copy as a series of complete evidence paragraphs separated by blank lines. Each paragraph must reproduce an effective approved claim with a matching citation or the explicitly authored event note. Layout whitespace may vary. Hooks, CTAs and hashtags come from controlled language and platform choices. A free-form paraphrase, extra number, unsupported promise, wrong Hebrew address, missing CTA, or prohibited link returns a field-specific violation. Hebrew voice applies to editorial wording, with approved evidence retained as supplied.
+- V1 caption, hook, CTA and hashtag budgets are BrandAI editorial rules. Links stay in the body on channels that allow them, and the brand playbook can tighten that rule with `content_link_placement: "forbidden"`. Each item retains the playbook hash, override revision and applied format budgets. FLUX.2 directives use the approved pillar's layout and style with text-free constraints. Photo directives use the existing treatment planner for all three photo modes. This milestone generates the directive for later execution.
+- Generation makes one corrective retry with structured violations before storing either `VALIDATION_FAILED` or `READY_FOR_REVIEW`. The diversity gate compares current brand drafts and delivery history with word-shingle Jaccard, opening-hook patterns and embedding cosine. The default comparison window is 20 items. Applications can inject `DiversitySettings` to change the window or thresholds. Historical vectors are compared only within the same embedding model, with lexical checks continuing across model changes.
+- Manual edits append an immutable revision and revalidate the current copy. Approval names the exact current revision and rechecks evidence and similarity. It moves a ready item to `APPROVED`. Internal delivery methods record `SCHEDULED` and `PUBLISHED` after approval. Recording publication requires a successful `SocialPublisher` receipt. Actual delivery remains an adapter concern.
+
+#### Content API
+
+All paths are relative to `/api/brands/{brand_id}/content`.
+
+| Method and path | Purpose |
+|---|---|
+| `POST /generate/from-slot/{slot_id}` | Generate from an approved calendar slot |
+| `POST /generate/from-on-demand/{brief_id}` | Generate from a standalone or calendar-linked photo brief |
+| `GET /` | List items with platform and status filters, limit and offset |
+| `GET /{content_id}` | Read the current revision and its history |
+| `PATCH /{content_id}` | Edit copy, citations or visual selection and revalidate |
+| `POST /{content_id}/approve` | Approve the specified review-ready revision |
+
+Generation returns 201 for a new item and 200 for an existing item at the same placement. Check the returned lifecycle status and validation report for review eligibility. Edits and approval require the current `revision_id`. Visual edits accept an approved layout and supported framing or subject choice. Photo recipes retain the same asset and treatment mode.
+
+#### Provider configuration
+
+`MockDeterministicContentProvider` and the CPU hash embedding stub are the default. On a provisioned Windows workstation, set `BRANDAI_CONTENT_PROVIDER=local` for the Qwen3.5-9B Q8 llama.cpp adapter and local CPU E5 embeddings. The local worker serializes llama.cpp leases within one API process and keeps the existing VRAM and cleanup checks. A future AWS `g7.2xlarge` worker can supply the same `GPUWorkerProvider` lease to `QwenContentProvider` via `create_app(content_provider=..., content_embeddings=...)`. The API and content domain use the leased structured interface without AWS provisioning logic. An unavailable provider returns 503.
+
 ## macOS backend verification
 
 Use Python 3.12 and a local runtime. The tests run against disposable brand stores with deterministic LLM, embedding and GPU worker doubles. To include the loopback browser smoke test, install Chromium in a runtime cache and leave `PLAYWRIGHT_BROWSERS_PATH` set while running pytest.
@@ -91,7 +119,7 @@ Use Python 3.12 and a local runtime. The tests run against disposable brand stor
 export BRANDAI_RUNTIME_ROOT="$HOME/brandai-runtime"
 uv venv --python 3.12 "$BRANDAI_RUNTIME_ROOT/.venv"
 uv pip install --python "$BRANDAI_RUNTIME_ROOT/.venv/bin/python" -e '.[dev]'
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export BRANDAI_CONTENT_PROVIDER=mock HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export PLAYWRIGHT_BROWSERS_PATH="$BRANDAI_RUNTIME_ROOT/cache/playwright"
 "$BRANDAI_RUNTIME_ROOT/.venv/bin/python" -m playwright install chromium
 "$BRANDAI_RUNTIME_ROOT/.venv/bin/python" -m pytest -q

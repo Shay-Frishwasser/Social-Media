@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint, text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import BrandBase, json_type, new_uuid, utcnow
@@ -223,3 +225,61 @@ class PlannedContentSlot(BrandBase):
     claim_id: Mapped[str | None] = mapped_column(ForeignKey("brand_claims.id"))
     depth: Mapped[str | None] = mapped_column(String(30))
     photo_brief_id: Mapped[str | None] = mapped_column(ForeignKey("on_demand_photo_briefs.id"))
+
+
+class ContentItem(BrandBase):
+    __tablename__ = "content_items"
+    __table_args__ = (
+        Index(
+            "uq_content_items_standalone_brief", "on_demand_brief_id",
+            unique=True, sqlite_where=text("cadence_slot_id IS NULL"),
+        ),
+        CheckConstraint("cadence_slot_id IS NOT NULL OR on_demand_brief_id IS NOT NULL", name="content_source"),
+        CheckConstraint(
+            "status IN ('DRAFT','VALIDATION_FAILED','READY_FOR_REVIEW','APPROVED','SCHEDULED','PUBLISHED')",
+            name="content_status",
+        ),
+        CheckConstraint(
+            "content_depth IN ('micro','standard','deep_dive','educational_framework','story','carousel')",
+            name="content_depth",
+        ),
+        CheckConstraint("playbook_version >= 1", name="content_playbook_version"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    brand_id: Mapped[str] = mapped_column(String(36), index=True)
+    cadence_slot_id: Mapped[str | None] = mapped_column(ForeignKey("planned_content_slots.id"), unique=True)
+    on_demand_brief_id: Mapped[str | None] = mapped_column(ForeignKey("on_demand_photo_briefs.id"))
+    strategy_id: Mapped[str] = mapped_column(ForeignKey("strategies.id"))
+    playbook_version: Mapped[int] = mapped_column(Integer)
+    platform: Mapped[str] = mapped_column(String(30), index=True)
+    content_depth: Mapped[str] = mapped_column(String(30))
+    language: Mapped[str] = mapped_column(String(2))
+    context_json: Mapped[dict] = mapped_column(json_type(), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="DRAFT", index=True)
+    approved_revision_version: Mapped[int | None] = mapped_column(Integer)
+    approved_by: Mapped[str | None] = mapped_column(String(36))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivery_receipt: Mapped[dict | None] = mapped_column(json_type())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class ContentRevision(BrandBase):
+    __tablename__ = "content_revisions"
+    __table_args__ = (UniqueConstraint("content_id", "version"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    content_id: Mapped[str] = mapped_column(ForeignKey("content_items.id"))
+    version: Mapped[int] = mapped_column(Integer)
+    hook: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    cta: Mapped[str] = mapped_column(Text)
+    hashtags: Mapped[list] = mapped_column(json_type(), nullable=False)
+    hebrew_register_check: Mapped[dict] = mapped_column(json_type(), nullable=False)
+    visual_directive: Mapped[dict] = mapped_column(json_type(), nullable=False)
+    cited_claim_ids: Mapped[list] = mapped_column(json_type(), nullable=False)
+    validation_report: Mapped[dict] = mapped_column(json_type(), nullable=False)
+    embedding: Mapped[bytes | None] = mapped_column(LargeBinary)
+    embedding_model: Mapped[str | None] = mapped_column(String(160))
+    created_by: Mapped[str] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
